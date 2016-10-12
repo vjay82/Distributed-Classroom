@@ -1,6 +1,8 @@
 package de.volkerGronau.distributedClassroom;
 
-import java.awt.AWTException;
+import java.awt.Graphics;
+import java.awt.Image;
+import java.awt.MouseInfo;
 import java.awt.Robot;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
@@ -14,11 +16,13 @@ import java.net.URLConnection;
 
 import javax.imageio.ImageIO;
 
+import de.volkerGronau.ApplicationHelper;
 import de.volkerGronau.distributedClassroom.ProxyHelper.ProxyType;
 
 public class ScreenTransfer {
 
 	protected final Robot robot = new Robot();
+	protected Image cursorImage;
 	protected BufferedImage bufferedImage;
 	protected BufferedImage differenceImage;
 	protected Screen screen;
@@ -26,11 +30,16 @@ public class ScreenTransfer {
 	protected Proxy proxy;
 	protected int interval = 1000;
 
-	public ScreenTransfer(Screen screen, String name, String serverAddress) throws AWTException {
+	public ScreenTransfer(Screen screen, String name, String serverAddress) throws Exception {
 		super();
 
 		this.screen = screen;
 		this.urlString = serverAddress + "?userName=" + name;
+
+		cursorImage = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
+		Graphics graphics = cursorImage.getGraphics();
+		graphics.drawImage(ApplicationHelper.Resources.getImage("cursorRed.png", false).getImage(), 0, 0, null);
+		graphics.dispose();
 
 		Thread thread = new Thread("Screen Grab Thread") {
 			@Override
@@ -58,6 +67,14 @@ public class ScreenTransfer {
 			if (differenceImage == null) {
 				differenceImage = new BufferedImage(newBufferedImage.getWidth(), newBufferedImage.getHeight(), BufferedImage.TYPE_INT_ARGB);
 			}
+
+			//TODO: transfer cursor position to the server and let it paint it on top of the image -> saves bandwith and much smoother animation
+			java.awt.Point point = MouseInfo.getPointerInfo().getLocation();
+			point.x -= screen.getBounds().x;
+			point.y -= screen.getBounds().y;
+			Graphics graphics = newBufferedImage.getGraphics();
+			graphics.drawImage(cursorImage, point.x, point.y, null);
+			graphics.dispose();
 
 			if (bufferedImage == null || isImageDifferent(bufferedImage, newBufferedImage, differenceImage)) {
 				//				ImageIO.write(bufferedImage, "PNG", new File("c:\\temp\\test.png"));
