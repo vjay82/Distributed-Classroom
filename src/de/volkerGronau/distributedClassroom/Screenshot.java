@@ -43,7 +43,7 @@ public class Screenshot extends Screen {
 	public Screenshot(int index, GraphicsDevice graphicsDevice) {
 		super(index, graphicsDevice);
 		try {
-			image = new Robot().createScreenCapture(bounds);// PlatformSpecific.getPlatformSpecific().getScreenshot(bounds);
+			image = new Robot().createScreenCapture(bounds);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

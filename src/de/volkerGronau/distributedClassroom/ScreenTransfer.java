@@ -24,6 +24,7 @@ public class ScreenTransfer {
 	protected Screen screen;
 	protected String urlString;
 	protected Proxy proxy;
+	protected int interval = 1000;
 
 	public ScreenTransfer(Screen screen, String name, String serverAddress) throws AWTException {
 		super();
@@ -40,7 +41,7 @@ public class ScreenTransfer {
 							proxy = ProxyHelper.getProxy(urlString, ProxyType.os);
 						}
 						grabScreen();
-						Thread.sleep(1000);
+						Thread.sleep(interval);
 					}
 				} catch (InterruptedException e) {
 				}
@@ -83,12 +84,10 @@ public class ScreenTransfer {
 			ImageIO.write(bufferedImage, "PNG", os);
 			os.flush();
 
-			try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-				String line;
-				while ((line = reader.readLine()) != null) {
-					if ("OK".equals(line)) {
-						ok = true;
-					}
+			if (((HttpURLConnection) conn).getResponseCode() == 200) {
+				try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+					ok = "OK".equals(reader.readLine());
+					interval = Integer.parseInt(reader.readLine());
 				}
 			}
 		}

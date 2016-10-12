@@ -44,6 +44,10 @@ public class ServerWindowController implements HttpHandler {
 	public void init(Stage stage, ResourceBundle resources, Settings settings) throws Exception {
 		stage.setTitle(resources.getString("title"));
 
+		scrollPane.viewportBoundsProperty().addListener((obs, old, bounds) -> {
+			flowPane.setPrefWidth(bounds.getMaxX() - bounds.getMinX());
+		});
+
 		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 0);
 		server.createContext("/DistributedClassroom", this);
 		server.setExecutor(null); // creates a default executor
@@ -92,7 +96,7 @@ public class ServerWindowController implements HttpHandler {
 			}
 		}
 
-		String response = "OK";
+		String response = "OK\n" + (userName.equals(openedUserName) ? "100" : "5000");
 		httpExchange.sendResponseHeaders(200, response.length());
 		OutputStream os = httpExchange.getResponseBody();
 		os.write(response.getBytes());

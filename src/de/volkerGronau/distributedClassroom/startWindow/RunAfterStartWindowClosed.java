@@ -1,4 +1,4 @@
-package de.volkerGronau.distributedClassroom;
+package de.volkerGronau.distributedClassroom.startWindow;
 
 import de.volkerGronau.distributedClassroom.settings.Settings;
 

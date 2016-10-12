@@ -2,7 +2,6 @@ package de.volkerGronau.distributedClassroom.startWindow;
 
 import java.util.ResourceBundle;
 
-import de.volkerGronau.distributedClassroom.RunAfterStartWindowClosed;
 import de.volkerGronau.distributedClassroom.Screenshot;
 import de.volkerGronau.distributedClassroom.settings.Settings;
 import javafx.fxml.FXML;

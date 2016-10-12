@@ -14,6 +14,7 @@ import de.volkerGronau.distributedClassroom.clientWindow.ClientWindowController;
 import de.volkerGronau.distributedClassroom.javaFX.MyFXMLLoader;
 import de.volkerGronau.distributedClassroom.serverWindow.ServerWindowController;
 import de.volkerGronau.distributedClassroom.settings.Settings;
+import de.volkerGronau.distributedClassroom.startWindow.RunAfterStartWindowClosed;
 import de.volkerGronau.distributedClassroom.startWindow.StartWindowController;
 import javafx.application.Application;
 import javafx.application.Platform;
