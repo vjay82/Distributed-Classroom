@@ -1,0 +1,95 @@
+<project name="Distributed-Classroom" basedir="." default="build" xmlns:fx="javafx:com.sun.javafx.tools.ant">
+
+	<target name="build" description="builds an installer for the current platform">
+
+		<property name="jdk.home" value="C:/Program Files/Java/jdk1.8.0_102" />
+
+		<echo>JDK home is set to ${jdk.home}</echo>
+
+		<property name="application.name" value="Distributed Classroom" />
+		<property name="application.author" value="Volker Gronau" />
+		<property name="application.version" value="1.00" />
+
+		<property name="lib.dir" value="lib" />
+		<property name="src.dir" value="src" />
+		
+		<property name="tmp.dir" value="${java.io.tmpdir}" />
+		<property name="build.dir" value="build" />
+		<property name="build.classes.dir" value="${build.dir}/classes" />
+
+		<delete dir="${build.dir}" failonerror="false" quiet="true" />
+		<mkdir dir="${build.classes.dir}" />
+
+		<unjar dest="${build.classes.dir}">
+			<fileset dir="${lib.dir}">
+				<include name="**/*.jar" />
+			</fileset>
+		</unjar>
+
+		<javac srcdir="${src.dir}" destdir="${build.classes.dir}">
+			<classpath>
+				<fileset dir="${lib.dir}">
+					<include name="**/*.jar" />
+				</fileset>
+			</classpath>
+		</javac>
+
+		<taskdef resource="com/sun/javafx/tools/ant/antlib.xml" uri="javafx:com.sun.javafx.tools.ant" classpath="${jdk.home}/lib/ant-javafx.jar" />
+
+		<fx:jar destfile="${build.dir}/DistributedClassroom.jar">
+			<!-- Details about application -->
+			<fx:application name="${application.name}" mainClass="de.volkerGronau.distributedClassroom.DistributedClassroom" />
+			<fx:platform javafx="8+" j2se="8.0">
+				<fx:jvmarg value="-Dfile.encoding=UTF-8" />
+			</fx:platform>
+
+			<!-- What to include into result jar file? Everything in the build tree -->
+			<fileset dir="${build.classes.dir}">
+				<exclude name="controlsfx*.properties" />
+				<exclude name="**/LICENSE*" />
+				<exclude name="templates/**" />
+				<exclude name="templates" />
+				<exclude name="META-INF/maven/**" />
+				<exclude name="META-INF/services/**" />
+				<exclude name="META-INF/NOTICE*" />
+				<exclude name="META-INF/INDEX.LIST" />
+				<exclude name="ch/randelshofer/quaqua/**/*.png" />
+				<exclude name="ch/randelshofer/quaqua/**/*.icc" />
+				<exclude name="ch/randelshofer/quaqua/version.txt" />
+				<exclude name="org/controlsfx/**" />
+				<exclude name="org/hamcrest/**/*.html" />
+			</fileset>
+
+			<fileset dir="${src.dir}">
+				<include name="de/volkerGronau/distributedClassroom/**/*.properties" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.fxml" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.xml" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.json" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.gif" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.jpg" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.png" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.css" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.mp4" />
+				<include name="de/volkerGronau/distributedClassroom/**/*.otf" />
+			</fileset>
+
+			<!-- Customize jar manifest (optional) -->
+			<manifest>
+				<attribute name="Application-Name" value="${application.name}" />
+				<attribute name="Implementation-Vendor" value="${application.author}" />
+				<attribute name="Implementation-Version" value="${application.version}" />
+			</manifest>
+		</fx:jar>
+
+		<fx:deploy outdir="${build.dir}" outfile="${application.name}" nativeBundles="all">
+			<fx:application name="${application.name}" mainClass="de.volkerGronau.distributedClassroom.DistributedClassroom" version="${application.version}" />
+
+			<fx:resources>
+				<fx:fileset dir="${build.dir}" includes="DistributedClassroom.jar" />
+			</fx:resources>
+
+			<fx:info title="DistributedClassroom" vendor="${application.author}" />
+		</fx:deploy>
+
+	</target>
+</project>
