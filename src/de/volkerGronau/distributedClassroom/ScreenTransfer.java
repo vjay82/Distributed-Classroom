@@ -8,36 +8,47 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.Proxy;
 import java.net.URL;
 import java.net.URLConnection;
-import java.util.Timer;
-import java.util.TimerTask;
 
 import javax.imageio.ImageIO;
 
-public class ScreenCapture {
+import de.volkerGronau.distributedClassroom.ProxyHelper.ProxyType;
+
+public class ScreenTransfer {
 
 	protected final Robot robot = new Robot();
 	protected BufferedImage bufferedImage;
 	protected BufferedImage differenceImage;
 	protected Screen screen;
 	protected String urlString;
+	protected Proxy proxy;
 
-	public ScreenCapture(Screen screen, String name, String serverAddress) throws AWTException {
+	public ScreenTransfer(Screen screen, String name, String serverAddress) throws AWTException {
 		super();
 
 		this.screen = screen;
 		this.urlString = serverAddress + "?userName=" + name;
 
-		Timer timer = new Timer("Screen Grab Thread", true);
-		timer.schedule(new TimerTask() {
-
+		Thread thread = new Thread("Screen Grab Thread") {
 			@Override
 			public void run() {
-				grabScreen();
+				try {
+					while (!isInterrupted()) {
+						if (proxy == null) {
+							proxy = ProxyHelper.getProxy(urlString, ProxyType.os);
+						}
+						grabScreen();
+						Thread.sleep(1000);
+					}
+				} catch (InterruptedException e) {
+				}
 			}
-
-		}, 2000, 2000);
+		};
+		thread.setDaemon(true);
+		thread.setPriority(Thread.MIN_PRIORITY);
+		thread.start();
 	}
 
 	public void grabScreen() {
@@ -63,7 +74,7 @@ public class ScreenCapture {
 
 	protected void sendImage(BufferedImage bufferedImage) throws Exception {
 		URL url = new URL(urlString);
-		URLConnection conn = url.openConnection();
+		URLConnection conn = url.openConnection(proxy);
 		conn.setDoOutput(true);
 		((HttpURLConnection) conn).setRequestMethod("POST");
 

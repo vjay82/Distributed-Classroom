@@ -3,7 +3,7 @@ package de.volkerGronau.distributedClassroom.clientWindow;
 import java.util.ResourceBundle;
 
 import de.volkerGronau.distributedClassroom.Screen;
-import de.volkerGronau.distributedClassroom.ScreenCapture;
+import de.volkerGronau.distributedClassroom.ScreenTransfer;
 import de.volkerGronau.distributedClassroom.settings.Settings;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -26,7 +26,7 @@ public class ClientWindowController {
 			Platform.exit();
 		});
 
-		new ScreenCapture(Screen.getScreen(String.valueOf(settings.getScreen())), settings.getName(), settings.getServerAddress());
+		new ScreenTransfer(Screen.getScreen(String.valueOf(settings.getScreen())), settings.getName(), settings.getServerAddress());
 
 	}
 
