@@ -26,7 +26,7 @@
 			</fileset>
 		</unjar>
 
-		<javac srcdir="${src.dir}" destdir="${build.classes.dir}">
+		<javac srcdir="${src.dir}" destdir="${build.classes.dir}" debug="true">
 			<classpath>
 				<fileset dir="${lib.dir}">
 					<include name="**/*.jar" />
