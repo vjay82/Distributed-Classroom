@@ -3,6 +3,7 @@ package de.volkerGronau.distributedClassroom.serverWindow;
 import java.awt.Graphics;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -38,7 +39,6 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
-import sun.awt.image.IntegerComponentRaster;
 
 public class ServerWindowController implements HttpHandler {
 
@@ -60,8 +60,6 @@ public class ServerWindowController implements HttpHandler {
 
 	protected Map<String, Client> clientCache = Maps.newHashMap();
 	protected int[] cursorImageData;
-	protected int cursorImageOffset;
-	protected int cursorImageScan;
 
 	protected String openedUserName;
 	protected boolean isControlling;
@@ -77,10 +75,7 @@ public class ServerWindowController implements HttpHandler {
 		Graphics graphics = cursorBufferedImage.getGraphics();
 		graphics.drawImage(ApplicationHelper.Resources.getImage("cursorRed.png", false).getImage(), 0, 0, null);
 		graphics.dispose();
-		IntegerComponentRaster icr = (IntegerComponentRaster) cursorBufferedImage.getRaster();
-		cursorImageData = icr.getDataStorage();
-		cursorImageOffset = icr.getDataOffset(0);
-		cursorImageScan = icr.getScanlineStride();
+		cursorImageData = ((DataBufferInt) cursorBufferedImage.getRaster().getDataBuffer()).getData();
 
 		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 0);
 		server.createContext("/DistributedClassroom", this);
@@ -148,8 +143,9 @@ public class ServerWindowController implements HttpHandler {
 			notifyOfNewImage(userName, client);
 		}
 
-		StringBuilder response = new StringBuilder(result).append('\n').append(userName.equals(openedUserName) && isControlling).append('\n');
-		response.append(userName.equals(openedUserName) ? "0" : "5000").append('\n'); // if opened user update the picture fast, otherwise slowly
+		boolean thisUserOpened = userName.equals(openedUserName);
+		StringBuilder response = new StringBuilder(result).append('\n').append(thisUserOpened && isControlling).append('\n');
+		response.append(thisUserOpened ? "0" : "5000").append('\n'); // if opened user update the picture fast, otherwise slowly
 		synchronized (client.commands) {
 			for (String line : client.commands) {
 				response.append(line);
@@ -164,7 +160,7 @@ public class ServerWindowController implements HttpHandler {
 	}
 
 	protected void notifyOfNewImage(String userName, Client client) {
-		client.fxImage = SwingFXUtils.toFXImage(client.bufferedImage, client.fxImage);
+		client.fxImage = SwingFXUtils.toFXImage(client.bufferedImage, null);
 		if (client.cursorPos != null) {
 			try {
 				int maxHeight = client.cursorPos.y + Math.min(32, client.bufferedImage.getHeight() - client.cursorPos.y);
@@ -173,13 +169,13 @@ public class ServerWindowController implements HttpHandler {
 				//				client.fxImage.getPixelWriter().setPixels(client.cursorPos.x, client.cursorPos.y, maxWidth, maxHeight, PixelFormat.getIntArgbInstance(), cursorImageData, cursorImageOffset, cursorImageScan);
 
 				int index = 0;
-				int color;
+				int cursorColor;
 				PixelWriter pixelWriter = client.fxImage.getPixelWriter();
 				for (int x = client.cursorPos.x; x < maxWidth; x++) {
 					for (int y = client.cursorPos.y; y < maxHeight; y++) {
-						color = cursorImageData[index++];
-						if (color >> 24 != 0) {
-							pixelWriter.setArgb(x, y, color);
+						cursorColor = cursorImageData[index++];
+						if (cursorColor >> 24 != 0) {
+							pixelWriter.setArgb(x, y, cursorColor);
 						}
 					}
 				}
@@ -201,13 +197,14 @@ public class ServerWindowController implements HttpHandler {
 			imageView.setOnMouseClicked(e -> {
 				switchToSingleUserView(client);
 			});
+			client.imageView = imageView;
 			client.borderPane = new BorderPane(imageView);
 			client.borderPane.setTop(new Label(client.userName));
 			flowPane.getChildren().add(client.borderPane);
 		}
 
 		if (openedUserName == null) {
-			((ImageView) client.borderPane.getCenter()).setImage(client.fxImage);
+			client.imageView.setImage(client.fxImage);
 		} else if (client.userName.equals(openedUserName)) {
 			((ImageView) ((StackPane) scrollPane.getContent()).getChildren().get(0)).setImage(client.fxImage);
 		}
@@ -217,9 +214,7 @@ public class ServerWindowController implements HttpHandler {
 
 		Button backButton = new Button("Back");
 		backButton.setOnAction(e -> {
-			scrollPane.setContent(flowPane);
-			openedUserName = null;
-			isControlling = false;
+			switchToMultiUserView();
 		});
 		CheckBox takeControlCheckBox = new CheckBox("Take Control");
 		takeControlCheckBox.selectedProperty().addListener((obs, old, selected) -> {
@@ -286,6 +281,15 @@ public class ServerWindowController implements HttpHandler {
 		openedUserName = client.userName;
 		imageView.requestFocus();
 
+	}
+
+	protected void switchToMultiUserView() {
+		for (Client client : clientCache.values()) {
+			client.imageView.setImage(client.fxImage);
+		}
+		scrollPane.setContent(flowPane);
+		openedUserName = null;
+		isControlling = false;
 	}
 
 }
