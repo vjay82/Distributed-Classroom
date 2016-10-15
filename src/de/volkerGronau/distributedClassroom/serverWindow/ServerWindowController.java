@@ -40,6 +40,7 @@ import javafx.scene.image.WritableImage;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
 public class ServerWindowController implements HttpHandler {
@@ -51,7 +52,7 @@ public class ServerWindowController implements HttpHandler {
 	protected FlowPane flowPane;
 
 	@FXML
-	protected FlowPane menuPane;
+	protected HBox menuPane;
 
 	@FXML
 	protected AnchorPane rootPane;

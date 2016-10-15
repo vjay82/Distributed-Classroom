@@ -49,6 +49,8 @@ public class ClientBackend {
 	protected UserStatus userStatus = UserStatus.NEUTRAL;
 	protected UserStatus oldUserStatus;
 	protected long oldLastUserStatusReset;
+	protected int hotPixels;
+	protected int hotPixelHitCount;
 
 	public ClientBackend(Screen screen, String name, String serverAddress) throws Exception {
 		super();
@@ -66,12 +68,12 @@ public class ClientBackend {
 							proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
 						}
 						updateData();
-						if (!isInputControlledByServer) {
-							long waitingTime = 100l - System.currentTimeMillis() + startTime;
-							if (waitingTime > 0) {
-								Thread.sleep(waitingTime);
-							}
+						//						if (!isInputControlledByServer) {
+						long waitingTime = 100l - System.currentTimeMillis() + startTime;
+						if (waitingTime > 0) {
+							Thread.sleep(waitingTime);
 						}
+						//						}
 					}
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -100,10 +102,20 @@ public class ClientBackend {
 					contactServer();
 				} else {
 					changedPixels = getChangedPixels(oldImage, newBufferedImage, differenceImage);
-					if (changedPixels > 20) {
-						imageToSendToServer = differenceImage;
-						oldImage = newBufferedImage;
-						contactServer();
+					if (changedPixels > 0) {
+						if (changedPixels != hotPixels || hotPixelHitCount == 0) { // mac OS non retina = 30 pixels blinking cursor, retina = ?
+							if (hotPixels == changedPixels) {
+								hotPixelHitCount = 1;//++;
+							} else {
+								hotPixels = changedPixels;
+								hotPixelHitCount = 0;
+							}
+							imageToSendToServer = differenceImage;
+							oldImage = newBufferedImage;
+							contactServer();
+						} else {
+							imageToSendToServer = null;
+						}
 					} else {
 						imageToSendToServer = null;
 					}
