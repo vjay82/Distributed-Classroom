@@ -2,6 +2,8 @@ package de.volkerGronau.distributedClassroom.startWindow;
 
 import java.util.ResourceBundle;
 
+import com.google.common.base.Strings;
+
 import de.volkerGronau.distributedClassroom.Screenshot;
 import de.volkerGronau.distributedClassroom.settings.Settings;
 import javafx.fxml.FXML;
@@ -35,6 +37,11 @@ public class StartWindowController {
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings, RunAfterStartWindowClosed runAfterStartWindowClosed) {
 		stage.setTitle(resources.getString("title"));
+
+		buttonStart.setDisable(true);
+		tfName.textProperty().addListener((obs, old, text) -> {
+			buttonStart.setDisable(Strings.isNullOrEmpty(text));
+		});
 
 		tfName.setText(settings.getName());
 		tfServerAddress.setText(settings.getServerAddress());
