@@ -320,7 +320,7 @@ public class ServerWindowController implements HttpHandler {
 			switchToMultiUserView();
 		});
 		CheckBox takeControlCheckBox = new CheckBox("Take Control");
-		takeControlCheckBox.setStyle("-fx-background-color: gray");
+		takeControlCheckBox.setStyle("-fx-background-color: lightgray");
 		takeControlCheckBox.selectedProperty().addListener((obs, old, selected) -> {
 			isControlling = selected;
 		});
