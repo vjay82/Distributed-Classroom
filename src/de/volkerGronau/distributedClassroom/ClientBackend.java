@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.URL;
 import java.net.URLConnection;
@@ -20,25 +21,36 @@ import javax.imageio.ImageIO;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 
 import de.volkerGronau.distributedClassroom.ProxyHelper.ProxyType;
+import javafx.application.Platform;
 import javafx.scene.input.KeyCode;
 
-public class ScreenTransfer {
+public class ClientBackend {
+
+	public static enum UserStatus {
+		OK, NEUTRAL, NOT_OK
+	}
 
 	protected final Robot robot = new Robot();
 
-	protected BufferedImage bufferedImage;
+	protected BufferedImage oldImage;
 	protected BufferedImage differenceImage;
 	protected BufferedImage imageToSendToServer;
+
 	protected Screen screen;
 	protected String urlBaseString;
 	protected Proxy proxy;
 	protected long takeNextPictureAt = 0;
 	protected java.awt.Point cursorPosition;
+	protected java.awt.Point oldCursorPosition;
 	protected int changedPixels;
 	protected boolean isInputControlledByServer;
 	protected long nextForcedContact = 0;
+	protected Runnable onResetUserStatus;
+	protected UserStatus userStatus = UserStatus.NEUTRAL;
+	protected UserStatus oldUserStatus;
+	protected long oldLastUserStatusReset;
 
-	public ScreenTransfer(Screen screen, String name, String serverAddress) throws Exception {
+	public ClientBackend(Screen screen, String name, String serverAddress) throws Exception {
 		super();
 
 		this.screen = screen;
@@ -49,15 +61,17 @@ public class ScreenTransfer {
 			public void run() {
 				try {
 					while (!isInterrupted()) {
-						//						long startTime = System.currentTimeMillis();
+						long startTime = System.currentTimeMillis();
 						if (proxy == null) {
 							proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
 						}
 						updateData();
-						//						long waitingTime = 100l - (System.currentTimeMillis() - startTime);
-						//						if (waitingTime > 0) {
-						//							Thread.sleep(waitingTime);
-						//						}
+						if (!isInputControlledByServer) {
+							long waitingTime = 100l - System.currentTimeMillis() + startTime;
+							if (waitingTime > 0) {
+								Thread.sleep(waitingTime);
+							}
+						}
 					}
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -65,14 +79,13 @@ public class ScreenTransfer {
 			}
 		};
 		thread.setDaemon(true);
-		thread.setPriority(Thread.MIN_PRIORITY);
+		//		thread.setPriority(Thread.MIN_PRIORITY);
 		thread.start();
 	}
 
 	public void updateData() {
 		try {
 			long currentTimeMillis = System.currentTimeMillis();
-			boolean callSendDataToServer = false;
 
 			if (takeNextPictureAt < currentTimeMillis) {
 				BufferedImage newBufferedImage = robot.createScreenCapture(screen.getBounds());
@@ -80,17 +93,17 @@ public class ScreenTransfer {
 					differenceImage = new BufferedImage(newBufferedImage.getWidth(), newBufferedImage.getHeight(), BufferedImage.TYPE_INT_ARGB);
 				}
 
-				if (bufferedImage == null) {
+				if (oldImage == null) {
 					imageToSendToServer = newBufferedImage;
-					bufferedImage = newBufferedImage;
-					callSendDataToServer = true;
+					oldImage = newBufferedImage;
 					changedPixels = 0;
+					contactServer();
 				} else {
-					changedPixels = getChangedPixels(bufferedImage, newBufferedImage, differenceImage);
+					changedPixels = getChangedPixels(oldImage, newBufferedImage, differenceImage);
 					if (changedPixels > 20) {
 						imageToSendToServer = differenceImage;
-						bufferedImage = newBufferedImage;
-						callSendDataToServer = true;
+						oldImage = newBufferedImage;
+						contactServer();
 					} else {
 						imageToSendToServer = null;
 					}
@@ -102,46 +115,69 @@ public class ScreenTransfer {
 			java.awt.Point newCursorPosition = MouseInfo.getPointerInfo().getLocation();
 			if (!newCursorPosition.equals(cursorPosition)) {
 				cursorPosition = newCursorPosition;
-				callSendDataToServer = true;
+				contactServer();
 			}
 
-			if (callSendDataToServer || isInputControlledByServer || nextForcedContact < currentTimeMillis) {
+			if (nextForcedContact < currentTimeMillis) {
 				sendDataToServer();
-				nextForcedContact = currentTimeMillis + 3000;
+				if (isInputControlledByServer) {
+					nextForcedContact = 0;
+				} else {
+					nextForcedContact = currentTimeMillis + 3000;
+				}
 			}
 
 		} catch (Exception e) {
-			bufferedImage = null;
+			resetServerConnection();
 			e.printStackTrace();
 		}
 	}
 
-	protected void sendDataToServer() throws Exception {
-		MutableBoolean result = new MutableBoolean(false);
+	protected void resetServerConnection() {
+		oldImage = null;
+		oldCursorPosition = null;
+		oldUserStatus = null;
+	}
 
+	protected void contactServer() {
+		nextForcedContact = 0;
+	}
+
+	protected URL getURL() throws MalformedURLException {
+		StringBuilder result = new StringBuilder(urlBaseString);
+		if (!userStatus.equals(oldUserStatus)) {
+			oldUserStatus = userStatus;
+			result.append("&userStatus=").append(userStatus);
+		}
+		if (imageToSendToServer != null) {
+			result.append("&imageIsUpdate=").append(imageToSendToServer == differenceImage);
+			//			result.append("&changedPixels=").append(changedPixels);
+		}
+		if (!cursorPosition.equals(oldCursorPosition) && screen.getBounds().contains(cursorPosition)) {
+			oldCursorPosition = cursorPosition;
+			result.append("&cursorX=").append(cursorPosition.x - screen.getBounds().x);
+			result.append("&cursorY=").append(cursorPosition.y - screen.getBounds().y);
+		}
+		if (proxy != null) {
+			result.append("&r=").append(Math.random()); // Lots of proxies cache anyway, we trick it
+		}
+		return new URL(result.toString());
+	}
+
+	protected void sendDataToServer() throws Exception {
+
+		MutableBoolean result = new MutableBoolean(false);
 		Thread sendThread = new Thread() {
 
 			@Override
 			public void run() {
 				try {
-					StringBuilder serverURL = new StringBuilder(urlBaseString);
-					if (imageToSendToServer != null) {
-						serverURL.append("&imageIsUpdate=").append(imageToSendToServer == differenceImage);
-						serverURL.append("&changedPixels=").append(changedPixels);
-					}
-					if (screen.getBounds().contains(cursorPosition)) {
-						serverURL.append("&cursorX=").append(cursorPosition.x - screen.getBounds().x);
-						serverURL.append("&cursorY=").append(cursorPosition.y - screen.getBounds().y);
-					}
-					if (proxy != null) {
-						serverURL.append("&r=").append(Math.random()); // Lots of proxies cache anyway, we trick it
-					}
 
-					URL url = new URL(serverURL.toString());
-					URLConnection connection = url.openConnection(proxy);
+					URLConnection connection = getURL().openConnection(proxy);
 					connection.setUseCaches(false);
 					connection.setConnectTimeout(2000);
 					connection.setReadTimeout(5000);
+
 					if (imageToSendToServer != null) {
 						connection.setDoOutput(true);
 						((HttpURLConnection) connection).setRequestMethod("POST");
@@ -155,7 +191,6 @@ public class ScreenTransfer {
 						try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
 							try {
 								result.setValue("OK".equals(reader.readLine()));
-								isInputControlledByServer = Boolean.parseBoolean(reader.readLine());
 								if (result.isTrue()) {
 									processServerResponse(reader);
 								}
@@ -189,23 +224,24 @@ public class ScreenTransfer {
 	}
 
 	protected String readNextToken(BufferedReader reader) throws IOException {
-		//		StringBuilder result = new StringBuilder();
-		//		char[] c = new char[1];
-		//		while (reader.read(c) != -1) {
-		//			if (c[0] == '\0') {
-		//				return result.toString();
-		//			}
-		//			result.append(c[0]);
-		//		}
-		//		return null;
 		return reader.readLine();
 	}
 
 	protected void processServerResponse(BufferedReader reader) throws NumberFormatException, IOException {
+		isInputControlledByServer = Boolean.parseBoolean(reader.readLine());
 		int pictureInterval = Integer.parseInt(reader.readLine());
 		if (imageToSendToServer != null) {
 			takeNextPictureAt = System.currentTimeMillis() + pictureInterval;
 		}
+		long lastUserStatusReset = Long.parseLong(reader.readLine());
+		if (lastUserStatusReset != oldLastUserStatusReset) {
+			oldLastUserStatusReset = lastUserStatusReset;
+			if (onResetUserStatus != null) {
+				Platform.runLater(onResetUserStatus); // faster but could run into a race condition, in this project it does not matter
+			}
+		}
+
+		//TODO: empty the connection stream first and then process the event -> much cleaner
 		String command;
 		while ((command = readNextToken(reader)) != null) {
 			switch (command) {
@@ -252,6 +288,23 @@ public class ScreenTransfer {
 		}
 
 		return result;
+	}
+
+	public Runnable getOnResetUserStatus() {
+		return onResetUserStatus;
+	}
+
+	public void setOnResetUserStatus(Runnable onResetUserStatus) {
+		this.onResetUserStatus = onResetUserStatus;
+	}
+
+	public UserStatus getUserStatus() {
+		return userStatus;
+	}
+
+	public void setUserStatus(UserStatus userStatus) {
+		this.userStatus = userStatus;
+		contactServer();
 	}
 
 }
