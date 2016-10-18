@@ -91,13 +91,26 @@ public class ServerWindowController implements HttpHandler {
 		server.start();
 
 		stage.setOnCloseRequest(e -> {
-			try {
-				server.stop(0);
-				Platform.exit();
-			} catch (Exception e2) {
-				e2.printStackTrace();
-				System.exit(1);
-			}
+			Thread closeThread = new Thread("CloseThread") {
+
+				@Override
+				public void run() {
+					System.out.println("Stopping HttpServer");
+					try {
+						server.stop(2);
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					System.out.println("Closing Application");
+					//					Platform.runLater(() -> {
+					//						Platform.exit();
+					//					});
+					System.exit(0);
+				}
+			};
+			closeThread.setDaemon(true);
+			closeThread.start();
 
 		});
 
