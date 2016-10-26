@@ -13,7 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 
@@ -88,7 +90,7 @@ public class ServerWindowController implements HttpHandler {
 
 		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 0);
 		server.createContext("/DistributedClassroom", this);
-		server.setExecutor(Executors.newFixedThreadPool(30)); // creates a default executor
+		server.setExecutor(new ThreadPoolExecutor(2, 2000, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>()));
 		server.start();
 
 		stage.setOnCloseRequest(e -> {
