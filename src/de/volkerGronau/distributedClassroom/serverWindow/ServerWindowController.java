@@ -134,9 +134,9 @@ public class ServerWindowController implements HttpHandler {
 			public void run() {
 				try {
 					while (!isInterrupted()) {
-						Thread.sleep(20000);
+						Thread.sleep(10000);
 						synchronized (clientCache) {
-							long removeOlderThan = System.currentTimeMillis() - 20000;
+							long removeOlderThan = System.currentTimeMillis() - 60000;
 							Iterator<Entry<String, Client>> iterator = clientCache.entrySet().iterator();
 							while (iterator.hasNext()) {
 								Client client = iterator.next().getValue();
@@ -150,7 +150,6 @@ public class ServerWindowController implements HttpHandler {
 						}
 					}
 				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
@@ -282,7 +281,7 @@ public class ServerWindowController implements HttpHandler {
 			if (client.borderPane == null) {
 				ImageView imageView = new ImageView();
 				imageView.setFitWidth(400);
-				imageView.setFitHeight(400);
+				imageView.setFitHeight(250);
 				imageView.setPreserveRatio(true);
 				imageView.setOnMouseClicked(e -> {
 					switchToSingleUserView(client);
@@ -291,6 +290,7 @@ public class ServerWindowController implements HttpHandler {
 				client.borderPane = new BorderPane(imageView);
 				Label label = new Label(client.userName);
 				label.setStyle("-fx-font-size:30px");
+				label.setMaxHeight(10);
 				client.borderPane.setTop(label);
 				int index = 0;
 				int insertIndex = 0;
@@ -298,7 +298,7 @@ public class ServerWindowController implements HttpHandler {
 				for (Node bp : children) {
 					String text = ((Label) ((BorderPane) bp).getTop()).getText();
 					if (text.compareToIgnoreCase(userName) < 0) {
-						insertIndex = index + 1;
+						insertIndex = index++ + 1;
 					} else {
 						break;
 					}
@@ -400,8 +400,10 @@ public class ServerWindowController implements HttpHandler {
 		while (menuPane.getChildren().size() > 1) {
 			menuPane.getChildren().remove(1);
 		}
-		for (Client client : clientCache.values()) {
-			client.imageView.setImage(client.fxImage);
+		synchronized (clientCache) {
+			for (Client client : clientCache.values()) {
+				client.imageView.setImage(client.fxImage);
+			}
 		}
 		scrollPane.setContent(flowPane);
 		openedUserName = null;
