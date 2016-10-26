@@ -21,6 +21,7 @@ import javafx.application.Platform;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 public class DistributedClassroom extends Application {
 
@@ -84,7 +85,8 @@ public class DistributedClassroom extends Application {
 					stage.show();
 				} else if (startClient) {
 					MyFXMLLoader fxmlLoader = new MyFXMLLoader(ClientWindowController.class, "ClientWindow.fxml");
-					Stage stage = new Stage();
+					Stage stage = new Stage(StageStyle.UTILITY);
+
 					stage.setScene(new Scene((Parent) fxmlLoader.load()));
 					ClientWindowController windowController = (ClientWindowController) fxmlLoader.getController();
 					windowController.init(stage, fxmlLoader.getResources(), settings);

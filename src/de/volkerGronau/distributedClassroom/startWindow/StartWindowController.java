@@ -73,7 +73,6 @@ public class StartWindowController {
 		settings.setName(tfName.getText());
 		settings.setServerAddress(tfServerAddress.getText());
 		settings.setServerPort(Integer.parseInt(tfServerPort.getText()));
-
 		settings.setScreen(screenChoiceBox.getSelectionModel().getSelectedItem().getIndex());
 	}
 

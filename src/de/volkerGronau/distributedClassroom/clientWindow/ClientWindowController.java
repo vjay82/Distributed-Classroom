@@ -8,14 +8,13 @@ import de.volkerGronau.distributedClassroom.Screen;
 import de.volkerGronau.distributedClassroom.settings.Settings;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.scene.control.Button;
 import javafx.scene.control.TabPane;
 import javafx.stage.Stage;
 
 public class ClientWindowController {
 
-	@FXML
-	protected Button buttonStopSharing;
+	//	@FXML
+	//	protected Button buttonStopSharing;
 
 	@FXML
 	protected TabPane statusTabPane;
@@ -25,10 +24,11 @@ public class ClientWindowController {
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings) throws Exception {
 		stage.setTitle(resources.getString("title"));
+		stage.setAlwaysOnTop(true);
 
-		buttonStopSharing.setOnAction(e -> {
-			Platform.exit();
-		});
+		//		buttonStopSharing.setOnAction(e -> {
+		//			Platform.exit();
+		//		});
 
 		stage.setOnCloseRequest(e -> {
 			Platform.exit();
