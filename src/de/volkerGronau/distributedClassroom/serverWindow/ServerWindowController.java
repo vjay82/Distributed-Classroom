@@ -7,6 +7,7 @@ import java.awt.image.DataBufferInt;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.List;
@@ -77,12 +78,22 @@ public class ServerWindowController implements HttpHandler {
 
 	protected Map<String, Client> clientCache = Maps.newHashMap();
 	protected int[] cursorImageData;
-	protected String openedUserName;
+	protected Client openedClient;
 	protected boolean isControlling;
 	protected long lastUserStatusReset;
+	protected Stage stage;
+	protected ResourceBundle resources;
+	protected boolean closing;
+	protected boolean frozen;
+
+	protected void updateTitle() {
+		stage.setTitle(resources.getString("title") + (openedClient == null ? "" : " - " + openedClient.userName + " - " + resources.getString("status") + " " + openedClient.userStatus));
+	}
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings) throws Exception {
-		stage.setTitle(resources.getString("title"));
+		this.stage = stage;
+		this.resources = resources;
+		updateTitle();
 		scrollPane.viewportBoundsProperty().addListener((obs, old, bounds) -> {
 			flowPane.setPrefWidth(bounds.getMaxX() - bounds.getMinX());
 		});
@@ -99,6 +110,7 @@ public class ServerWindowController implements HttpHandler {
 				@Override
 				public void run() {
 					System.out.println("Stopping HttpServer");
+					closing = true;
 					try {
 						server.stop(2);
 					} catch (Exception e) {
@@ -171,6 +183,10 @@ public class ServerWindowController implements HttpHandler {
 
 	@Override
 	public void handle(HttpExchange httpExchange) throws IOException {
+		if (closing) {
+			httpExchange.close();
+		}
+
 		String result = "OK";
 		String query = httpExchange.getRequestURI().getQuery();
 
@@ -184,7 +200,7 @@ public class ServerWindowController implements HttpHandler {
 			}
 		}
 
-		String userName = parameters.get("userName");
+		String userName = URLDecoder.decode(parameters.get("userName"), "UTF-8");
 
 		Client client;
 		synchronized (clientCache) {
@@ -234,7 +250,7 @@ public class ServerWindowController implements HttpHandler {
 			updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
 		}
 
-		boolean thisUserOpened = userName.equals(openedUserName);
+		boolean thisUserOpened = client == openedClient;
 		StringBuilder response = new StringBuilder(result).append('\n').append(thisUserOpened && isControlling).append('\n');
 		response.append(thisUserOpened ? "0" : "5000").append('\n'); // if opened user update the picture fast, otherwise slowly
 		response.append(lastUserStatusReset).append('\n');
@@ -309,10 +325,12 @@ public class ServerWindowController implements HttpHandler {
 				children.add(insertIndex, client.borderPane);
 			}
 			if (imageOrCursorPositionChanged) {
-				if (openedUserName == null) {
+				if (openedClient == null) {
 					client.imageView.setImage(client.fxImage);
-				} else if (client.userName.equals(openedUserName)) {
-					((ImageView) scrollPane.getContent()).setImage(client.fxImage);
+				} else if (client == openedClient) {
+					if (!frozen) {
+						((ImageView) scrollPane.getContent()).setImage(client.fxImage);
+					}
 				}
 			}
 			if (userStatusChanged) {
@@ -332,6 +350,7 @@ public class ServerWindowController implements HttpHandler {
 	}
 
 	protected void switchToSingleUserView(Client client) {
+
 		Button backButton = new Button("Back");
 		backButton.setOnAction(e -> {
 			switchToMultiUserView();
@@ -341,8 +360,17 @@ public class ServerWindowController implements HttpHandler {
 		takeControlCheckBox.selectedProperty().addListener((obs, old, selected) -> {
 			isControlling = selected;
 		});
+		CheckBox freezeCheckBox = new CheckBox("Freeze");
+		freezeCheckBox.setStyle("-fx-background-color: lightgray");
+		freezeCheckBox.selectedProperty().addListener((obs, old, selected) -> {
+			frozen = selected;
+			if (!frozen) {
+				((ImageView) scrollPane.getContent()).setImage(client.fxImage); // When unfrozen update image immediately
+			}
+		});
 		menuPane.getChildren().add(backButton);
 		menuPane.getChildren().add(takeControlCheckBox);
+		menuPane.getChildren().add(freezeCheckBox);
 
 		ImageView imageView = new ImageView();
 		imageView.setImage(client.fxImage);
@@ -395,8 +423,11 @@ public class ServerWindowController implements HttpHandler {
 		});
 
 		scrollPane.setContent(imageView);
-		openedUserName = client.userName;
+		isControlling = false;
+		frozen = false;
+		openedClient = client;
 		imageView.requestFocus();
+		updateTitle();
 	}
 
 	protected void switchToMultiUserView() {
@@ -409,8 +440,9 @@ public class ServerWindowController implements HttpHandler {
 			}
 		}
 		scrollPane.setContent(flowPane);
-		openedUserName = null;
+		openedClient = null;
 		isControlling = false;
+		updateTitle();
 	}
 
 }

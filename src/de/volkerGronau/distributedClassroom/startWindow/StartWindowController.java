@@ -4,6 +4,7 @@ import java.util.ResourceBundle;
 
 import com.google.common.base.Strings;
 
+import de.volkerGronau.distributedClassroom.DistributedClassroom;
 import de.volkerGronau.distributedClassroom.Screenshot;
 import de.volkerGronau.distributedClassroom.settings.Settings;
 import javafx.fxml.FXML;
@@ -36,7 +37,7 @@ public class StartWindowController {
 	protected ScreenChoiceBox screenChoiceBox;
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings, RunAfterStartWindowClosed runAfterStartWindowClosed) {
-		stage.setTitle(resources.getString("title"));
+		stage.setTitle(resources.getString("title") + " " + DistributedClassroom.VERSION);
 
 		buttonStart.setDisable(true);
 		tfName.textProperty().addListener((obs, old, text) -> {

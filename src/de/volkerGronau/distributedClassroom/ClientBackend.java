@@ -14,6 +14,7 @@ import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.URL;
 import java.net.URLConnection;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 import javax.imageio.ImageIO;
@@ -56,7 +57,7 @@ public class ClientBackend {
 		super();
 
 		this.screen = screen;
-		this.urlBaseString = serverAddress + "?userName=" + name;
+		this.urlBaseString = serverAddress + "?userName=" + URLEncoder.encode(name, "UTF-8") + "&version=" + DistributedClassroom.VERSION;
 
 		Thread thread = new Thread("Server Interactionthread") {
 			@Override
@@ -125,7 +126,7 @@ public class ClientBackend {
 			}
 
 			java.awt.Point newCursorPosition = MouseInfo.getPointerInfo().getLocation();
-			if (!newCursorPosition.equals(cursorPosition)) {
+			if (!newCursorPosition.equals(cursorPosition) && screen.getBounds().contains(newCursorPosition)) {
 				cursorPosition = newCursorPosition;
 				contactServer();
 			}
@@ -165,7 +166,7 @@ public class ClientBackend {
 			result.append("&imageIsUpdate=").append(imageToSendToServer == differenceImage);
 			//			result.append("&changedPixels=").append(changedPixels);
 		}
-		if (!cursorPosition.equals(oldCursorPosition) && screen.getBounds().contains(cursorPosition)) {
+		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screen.getBounds().contains(cursorPosition)) {
 			oldCursorPosition = cursorPosition;
 			result.append("&cursorX=").append(cursorPosition.x - screen.getBounds().x);
 			result.append("&cursorY=").append(cursorPosition.y - screen.getBounds().y);
@@ -223,7 +224,7 @@ public class ClientBackend {
 		};
 		sendThread.setDaemon(false);
 		sendThread.start();
-		sendThread.join(10000);
+		sendThread.join(15000);
 		if (sendThread.isAlive()) {
 			sendThread.interrupt();
 			throw new Exception("Timeout occured.");

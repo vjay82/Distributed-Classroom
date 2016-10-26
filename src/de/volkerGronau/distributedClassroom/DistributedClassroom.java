@@ -24,6 +24,8 @@ import javafx.stage.Stage;
 
 public class DistributedClassroom extends Application {
 
+	public static final String VERSION = "1.01";
+
 	protected ApplicationHelper applicationHelper = new ApplicationHelper("Volker Gronau", "Distributed Classroom");
 
 	public static void main(String[] args) {
