@@ -38,6 +38,7 @@ public class ClientWindowController {
 		clientBackend.setOnResetUserStatus(() -> {
 			eventIsFromUser = false;
 			statusTabPane.getSelectionModel().select(1);
+			clientBackend.resetUserStatus();
 			eventIsFromUser = true;
 		});
 		statusTabPane.getSelectionModel().selectedIndexProperty().addListener((obs, old, index) -> {

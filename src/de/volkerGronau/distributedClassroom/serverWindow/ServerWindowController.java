@@ -123,6 +123,7 @@ public class ServerWindowController implements HttpHandler {
 			synchronized (clientCache) {
 				for (Client client : clientCache.values()) {
 					client.borderPane.setStyle("");
+					client.userStatus = UserStatus.NEUTRAL;
 				}
 			}
 		});

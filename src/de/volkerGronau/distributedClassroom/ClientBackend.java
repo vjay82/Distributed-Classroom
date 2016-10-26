@@ -319,4 +319,9 @@ public class ClientBackend {
 		contactServer();
 	}
 
+	public void resetUserStatus() {
+		oldUserStatus = UserStatus.NEUTRAL;
+		userStatus = UserStatus.NEUTRAL;
+	}
+
 }
