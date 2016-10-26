@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
+import java.util.concurrent.Executors;
 
 import javax.imageio.ImageIO;
 
@@ -87,7 +88,7 @@ public class ServerWindowController implements HttpHandler {
 
 		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 0);
 		server.createContext("/DistributedClassroom", this);
-		server.setExecutor(null); // creates a default executor
+		server.setExecutor(Executors.newFixedThreadPool(30)); // creates a default executor
 		server.start();
 
 		stage.setOnCloseRequest(e -> {
