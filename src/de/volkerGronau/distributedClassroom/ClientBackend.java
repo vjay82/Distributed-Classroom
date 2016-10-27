@@ -150,6 +150,10 @@ public class ClientBackend {
 		} catch (Exception e) {
 			e.printStackTrace();
 			resetServerConnection();
+			try {
+				Thread.sleep(1000);
+			} catch (Exception e2) {
+			}
 		}
 	}
 
@@ -196,8 +200,12 @@ public class ClientBackend {
 			} else {
 				ImageIO.write(imageToSendToServer, "PNG", bos);
 			}
+			long startTime = System.currentTimeMillis();
 			networkOutputStream.writeInt(bos.size());
 			networkOutputStream.write(bos.toByteArray());
+			if (System.currentTimeMillis() - startTime > 3000) {
+				useGIF = true;
+			}
 			takeNextPictureAt = System.currentTimeMillis() + pictureInterval;
 		}
 
