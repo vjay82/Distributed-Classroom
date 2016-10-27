@@ -14,9 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
 
 import javax.imageio.ImageIO;
 
@@ -67,24 +65,35 @@ public class ServerWindowController implements HttpHandler {
 	protected static class Client {
 		String userName;
 		BufferedImage bufferedImage;
-		WritableImage fxImage;
+		volatile WritableImage fxImage;
 		java.awt.Point cursorPos;
 		BorderPane borderPane; // root element for user
 		ImageView imageView; // his/her image
 		List<String> commands = Lists.newArrayList(); // cached commands to send with next client's request
 		UserStatus userStatus;
 		long lastContact;
+		public void updateImageView() {
+			if (imageView != null) {
+				imageView.setImage(fxImage);
+			}
+		}
+		public void resetUserStatus() {
+			if (borderPane != null) {
+				borderPane.setStyle("");
+			}
+			userStatus = UserStatus.NEUTRAL;
+		}
 	}
 
 	protected Map<String, Client> clientCache = Maps.newHashMap();
 	protected int[] cursorImageData;
-	protected Client openedClient;
-	protected boolean isControlling;
+	protected volatile Client openedClient;
+	protected volatile boolean isControlling;
 	protected long lastUserStatusReset;
 	protected Stage stage;
 	protected ResourceBundle resources;
-	protected boolean closing;
-	protected boolean frozen;
+	protected volatile boolean closing;
+	protected volatile boolean frozen;
 
 	protected void updateTitle() {
 		stage.setTitle(resources.getString("title") + (openedClient == null ? "" : " - " + openedClient.userName + " - " + resources.getString("status") + " " + openedClient.userStatus));
@@ -99,9 +108,12 @@ public class ServerWindowController implements HttpHandler {
 		});
 		cursorImageData = loadCursorImageData();
 
+		System.setProperty("sun.net.httpserver.maxReqTime", "20000");
+		System.setProperty("sun.net.httpserver.maxRspTime", "20000");
+
 		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 0);
 		server.createContext("/DistributedClassroom", this);
-		server.setExecutor(new ThreadPoolExecutor(2, 2000, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>()));
+		server.setExecutor(Executors.newFixedThreadPool(500));
 		server.start();
 
 		stage.setOnCloseRequest(e -> {
@@ -137,8 +149,7 @@ public class ServerWindowController implements HttpHandler {
 			lastUserStatusReset = System.currentTimeMillis();
 			synchronized (clientCache) {
 				for (Client client : clientCache.values()) {
-					client.borderPane.setStyle("");
-					client.userStatus = UserStatus.NEUTRAL;
+					client.resetUserStatus();
 				}
 			}
 		});
@@ -158,7 +169,9 @@ public class ServerWindowController implements HttpHandler {
 								if (client.lastContact < removeOlderThan) {
 									iterator.remove();
 									Platform.runLater(() -> {
-										flowPane.getChildren().remove(client.borderPane);
+										if (client.borderPane != null) {
+											flowPane.getChildren().remove(client.borderPane);
+										}
 									});
 								}
 							}
@@ -222,7 +235,19 @@ public class ServerWindowController implements HttpHandler {
 
 		if (parameters.containsKey("imageIsUpdate")) {
 			imageOrCursorPositionChanged = true;
+			//			System.out.println(client.userName + " starting read");
+
+			//			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+			//			int nRead;
+			//			byte[] data = new byte[16384];
+			//			InputStream is = httpExchange.getRequestBody();
+			//			while ((nRead = is.read(data, 0, data.length)) != -1) {
+			//				buffer.write(data, 0, nRead);
+			//			}
+
 			BufferedImage transferedImage = ImageIO.read(httpExchange.getRequestBody());
+			//			System.out.println(client.userName + " finished read");
+
 			if (client.bufferedImage != null) {
 				Graphics g = client.bufferedImage.getGraphics();
 				g.drawImage(transferedImage, 0, 0, null);
@@ -269,7 +294,7 @@ public class ServerWindowController implements HttpHandler {
 
 	protected void updateUI(String userName, Client client, boolean imageOrCursorPositionChanged, boolean userStatusChanged) {
 		if (imageOrCursorPositionChanged) {
-			client.fxImage = SwingFXUtils.toFXImage(client.bufferedImage, null);
+			WritableImage newFxImage = SwingFXUtils.toFXImage(client.bufferedImage, null);
 			if (client.cursorPos != null) {
 				try {
 					int maxHeight = Math.min(32, client.bufferedImage.getHeight() - client.cursorPos.y);
@@ -281,7 +306,7 @@ public class ServerWindowController implements HttpHandler {
 
 					int index = 0;
 					int cursorColor;
-					PixelWriter pixelWriter = client.fxImage.getPixelWriter();
+					PixelWriter pixelWriter = newFxImage.getPixelWriter();
 					for (int x = client.cursorPos.x; x < maxWidthTotal; x++) {
 						for (int y = client.cursorPos.y; y < maxHeightTotal; y++) {
 							cursorColor = cursorImageData[index++];
@@ -289,12 +314,13 @@ public class ServerWindowController implements HttpHandler {
 								pixelWriter.setArgb(x, y, cursorColor);
 							}
 						}
-						index += (32 - maxWidth) * 32;
+						index += (32 - maxHeight);
 					}
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
 			}
+			client.fxImage = newFxImage;
 		}
 		Platform.runLater(() -> { // Runs in JavaFX Thread
 			if (client.borderPane == null) {
@@ -426,7 +452,7 @@ public class ServerWindowController implements HttpHandler {
 		isControlling = false;
 		frozen = false;
 		openedClient = client;
-		imageView.requestFocus();
+		Platform.runLater(imageView::requestFocus);
 		updateTitle();
 	}
 
@@ -436,7 +462,7 @@ public class ServerWindowController implements HttpHandler {
 		}
 		synchronized (clientCache) {
 			for (Client client : clientCache.values()) {
-				client.imageView.setImage(client.fxImage);
+				client.updateImageView();
 			}
 		}
 		scrollPane.setContent(flowPane);

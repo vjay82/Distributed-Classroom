@@ -6,7 +6,6 @@ import de.volkerGronau.distributedClassroom.ClientBackend;
 import de.volkerGronau.distributedClassroom.ClientBackend.UserStatus;
 import de.volkerGronau.distributedClassroom.Screen;
 import de.volkerGronau.distributedClassroom.settings.Settings;
-import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.TabPane;
 import javafx.stage.Stage;
@@ -24,14 +23,20 @@ public class ClientWindowController {
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings) throws Exception {
 		stage.setTitle(resources.getString("title"));
-		stage.setAlwaysOnTop(true);
+		try {
+			stage.setAlwaysOnTop(true);
+		} catch (Throwable t) {
+			// Old JavaFX does not support this function
+		}
 
 		//		buttonStopSharing.setOnAction(e -> {
 		//			Platform.exit();
 		//		});
 
 		stage.setOnCloseRequest(e -> {
-			Platform.exit();
+			System.out.println("Exiting");
+			//Platform.exit();
+			System.exit(0);
 		});
 
 		clientBackend = new ClientBackend(Screen.getScreen(String.valueOf(settings.getScreen())), settings.getName(), settings.getServerAddress());

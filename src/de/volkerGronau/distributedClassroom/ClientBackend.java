@@ -81,13 +81,20 @@ public class ClientBackend {
 				}
 			}
 		};
-		thread.setDaemon(true);
+		thread.setDaemon(false);
 		//		thread.setPriority(Thread.MIN_PRIORITY);
 		thread.start();
 	}
 
 	public void updateData() {
 		try {
+
+			java.awt.Point newCursorPosition = MouseInfo.getPointerInfo().getLocation();
+			if (!newCursorPosition.equals(cursorPosition) && screen.getBounds().contains(newCursorPosition)) {
+				cursorPosition = newCursorPosition;
+				contactServer();
+			}
+
 			long currentTimeMillis = System.currentTimeMillis();
 
 			if (takeNextPictureAt < currentTimeMillis) {
@@ -125,12 +132,6 @@ public class ClientBackend {
 				imageToSendToServer = null;
 			}
 
-			java.awt.Point newCursorPosition = MouseInfo.getPointerInfo().getLocation();
-			if (!newCursorPosition.equals(cursorPosition) && screen.getBounds().contains(newCursorPosition)) {
-				cursorPosition = newCursorPosition;
-				contactServer();
-			}
-
 			if (nextForcedContact < currentTimeMillis) {
 				sendDataToServer();
 				if (isInputControlledByServer) {
@@ -150,6 +151,7 @@ public class ClientBackend {
 		oldImage = null;
 		oldCursorPosition = null;
 		oldUserStatus = null;
+		proxy = null; // Reset detected proxy on communication error
 	}
 
 	protected void contactServer() {
@@ -168,10 +170,11 @@ public class ClientBackend {
 		}
 		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screen.getBounds().contains(cursorPosition)) {
 			oldCursorPosition = cursorPosition;
-			result.append("&cursorX=").append(cursorPosition.x - screen.getBounds().x);
-			result.append("&cursorY=").append(cursorPosition.y - screen.getBounds().y);
+			result.append("&cursorX=").append(oldCursorPosition.x - screen.getBounds().x);
+			result.append("&cursorY=").append(oldCursorPosition.y - screen.getBounds().y);
 		}
-		if (proxy != null) {
+
+		if (proxy != null && !Proxy.NO_PROXY.equals(proxy)) {
 			result.append("&r=").append(Math.random()); // Lots of proxies cache anyway, we trick it
 		}
 		return new URL(result.toString());
@@ -179,18 +182,17 @@ public class ClientBackend {
 
 	protected void sendDataToServer() throws Exception {
 
+		URLConnection connection = getURL().openConnection(proxy);
+		connection.setUseCaches(false);
+		connection.setConnectTimeout(2000);
+		connection.setReadTimeout(5000);
+
 		MutableBoolean result = new MutableBoolean(false);
 		Thread sendThread = new Thread() {
 
 			@Override
 			public void run() {
 				try {
-
-					URLConnection connection = getURL().openConnection(proxy);
-					connection.setUseCaches(false);
-					connection.setConnectTimeout(2000);
-					connection.setReadTimeout(5000);
-
 					if (imageToSendToServer != null) {
 						connection.setDoOutput(true);
 						((HttpURLConnection) connection).setRequestMethod("POST");
@@ -215,7 +217,6 @@ public class ClientBackend {
 						}
 					}
 				} catch (Exception e) {
-					proxy = null; // Reset detected proxy on communication error
 					e.printStackTrace();
 					result.setFalse();
 				}
@@ -224,7 +225,7 @@ public class ClientBackend {
 		};
 		sendThread.setDaemon(false);
 		sendThread.start();
-		sendThread.join(15000);
+		sendThread.join(20000);
 		if (sendThread.isAlive()) {
 			sendThread.interrupt();
 			throw new Exception("Timeout occured.");
