@@ -8,23 +8,11 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.net.MalformedURLException;
-import java.net.Proxy;
-import java.net.Proxy.Type;
-import java.util.concurrent.Future;
+import java.net.Socket;
+import java.net.UnknownHostException;
 
 import javax.imageio.ImageIO;
 
-import org.asynchttpclient.AsyncHttpClient;
-import org.asynchttpclient.AsyncHttpClientConfig;
-import org.asynchttpclient.BoundRequestBuilder;
-import org.asynchttpclient.DefaultAsyncHttpClient;
-import org.asynchttpclient.DefaultAsyncHttpClientConfig.Builder;
-import org.asynchttpclient.Response;
-import org.asynchttpclient.proxy.ProxyServer;
-
-import de.volkerGronau.distributedClassroom.ProxyHelper.ProxyType;
 import javafx.application.Platform;
 import javafx.scene.input.KeyCode;
 
@@ -42,7 +30,7 @@ public class ClientBackend {
 
 	protected Screen screen;
 	protected Rectangle screenBounds;
-	protected String urlBaseString;
+	protected String serverAddress;
 	protected long takeNextPictureAt = 0;
 	protected java.awt.Point cursorPosition;
 	protected java.awt.Point oldCursorPosition;
@@ -56,43 +44,24 @@ public class ClientBackend {
 	protected int hotPixels;
 	protected int hotPixelHitCount;
 	protected int requestCount = 0;
-	protected AsyncHttpClient client;
 	protected boolean useGIF;
 	protected AnimatedGIFWriter animatedGIFWriter = new AnimatedGIFWriter(false);
 	protected Thread interactionThread;
 	protected volatile long lastCycle;
 	protected String userName;
+	protected Socket clientSocket;
+	protected Thread readThread;
+	protected int pictureInterval = 5000;
 
 	public ClientBackend(Screen screen, String userName, String serverAddress) throws Exception {
 		super();
 
 		this.userName = userName;
 		this.screen = screen;
-		this.urlBaseString = serverAddress;//+ "?userName=" + URLEncoder.encode(name, "UTF-8") + "&version=" + DistributedClassroom.VERSION;
+		this.serverAddress = serverAddress;
 		this.screenBounds = screen.getBounds();
 
 		createInteractionThread();
-
-		//		Thread watcherThread = new Thread("Watchdog Thread") {
-		//			@Override
-		//			public void run() {
-		//				try {
-		//					while (!isInterrupted()) {
-		//						Thread.sleep(1000);
-		//						if (lastCycle < System.currentTimeMillis() - 60000) {
-		//							interactionThread.interrupt();
-		//							System.out.println("Watchdog - resetting.");
-		//							resetServerConnection();
-		//							createInteractionThread();
-		//						}
-		//					}
-		//				} catch (Exception e) {
-		//					e.printStackTrace();
-		//				}
-		//			}
-		//		};
-		//		watcherThread.setDaemon(false);
-		//		watcherThread.start();
 	}
 
 	protected void createInteractionThread() {
@@ -103,8 +72,7 @@ public class ClientBackend {
 				try {
 					while (!isInterrupted()) {
 						long startTime = System.currentTimeMillis();
-						if (client == null) {
-							createHttpClient();
+						if (clientSocket == null) {
 							lastCycle = System.currentTimeMillis();
 						}
 						updateData();
@@ -123,22 +91,6 @@ public class ClientBackend {
 		};
 		interactionThread.setDaemon(false);
 		interactionThread.start();
-	}
-
-	protected void createHttpClient() {
-		Proxy proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
-		System.out.println("Using Proxy: " + proxy);
-		ProxyServer proxyServer = null;
-		if (Type.HTTP.equals(proxy.type())) {
-			String addr = proxy.address().toString();
-			int index = addr.indexOf(':');
-			if (index != -1) {
-				proxyServer = (new ProxyServer.Builder(addr.substring(0, index), Integer.parseInt(addr.substring(index + 1)))).build();
-			}
-		}
-
-		AsyncHttpClientConfig config = (new Builder()).setMaxConnections(1).setMaxConnectionsPerHost(1).setConnectTimeout(5000).setConnectionTtl(30000).setProxyServer(proxyServer).setReadTimeout(30000).setMaxRequestRetry(1).setKeepAlive(false).build();
-		client = new DefaultAsyncHttpClient(config);
 	}
 
 	public void updateData() {
@@ -205,134 +157,131 @@ public class ClientBackend {
 		oldImage = null;
 		oldCursorPosition = null;
 		oldUserStatus = null;
-		if (client != null) {
+		if (readThread != null) {
+			readThread.interrupt();
+		}
+		if (clientSocket != null) {
 			try {
-				client.close();
+				clientSocket.close();
 			} catch (IOException e) {
 			}
 		}
-		client = null;
+		clientSocket = null;
 	}
 
 	protected void contactServer() {
 		nextForcedContact = 0;
 	}
 
-	protected String getURL() throws MalformedURLException {
-		//		StringBuilder result = new StringBuilder(urlBaseString);//.append("&requestCount=").append(requestCount++);
-		//		if (!userStatus.equals(oldUserStatus)) {
-		//			oldUserStatus = userStatus;
-		//			result.append("&userStatus=").append(userStatus);
-		//		}
-		//		if (imageToSendToServer != null) {
-		//			result.append("&imageIsUpdate=").append(imageToSendToServer == differenceImage);
-		//			//			result.append("&changedPixels=").append(changedPixels);
-		//		}
-		//		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screenBounds.contains(cursorPosition)) {
-		//			oldCursorPosition = cursorPosition;
-		//			result.append("&cursorX=").append(oldCursorPosition.x - screenBounds.x);
-		//			result.append("&cursorY=").append(oldCursorPosition.y - screenBounds.y);
-		//		}
-		//		return result.toString();
-		return urlBaseString;
-	}
+	NetworkOutputStream networkOutputStream;
+	protected void sendDataToServer() throws Exception {
 
-	protected void addParameters(BoundRequestBuilder b) {
-		b.addHeader("userName", userName);
-		if (!userStatus.equals(oldUserStatus)) {
-			oldUserStatus = userStatus;
-			b.addHeader("userStatus", String.valueOf(userStatus));
+		if (clientSocket == null) {
+			createClientSocket();
 		}
-		if (imageToSendToServer != null) {
-			b.addHeader("imageIsUpdate", String.valueOf(imageToSendToServer == differenceImage));
-		}
+
+		System.out.println("sending data");
 		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screenBounds.contains(cursorPosition)) {
 			oldCursorPosition = cursorPosition;
-			b.addHeader("cursorX", String.valueOf(oldCursorPosition.x - screenBounds.x));
-			b.addHeader("cursorY", String.valueOf(oldCursorPosition.y - screenBounds.y));
+			networkOutputStream.writeChar('c');
+			networkOutputStream.writeInt(oldCursorPosition.x - screenBounds.x);
+			networkOutputStream.writeInt(oldCursorPosition.y - screenBounds.y);
 		}
-
-		b.addHeader("requestCount", String.valueOf(++requestCount));
-	}
-
-	protected void sendDataToServer() throws Exception {
-		System.out.println("preparing");
-		Future<Response> f;
-		if (imageToSendToServer == null) {
-			System.out.println("using GET");
-			BoundRequestBuilder b = client.preparePost(getURL()).setRequestTimeout(30000);
-			addParameters(b);
-			f = b.execute();
-		} else {
-			System.out.println("using POST");
+		if (imageToSendToServer != null) {
+			networkOutputStream.writeChar('p');
+			networkOutputStream.writeBoolean(imageToSendToServer == differenceImage);
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
-
 			if (useGIF) {
 				animatedGIFWriter.write(imageToSendToServer, bos);
 			} else {
 				ImageIO.write(imageToSendToServer, "PNG", bos);
 			}
-			BoundRequestBuilder b = client.preparePost(getURL()).setRequestTimeout(30000).setBody(bos.toByteArray());
-			addParameters(b);
-			f = b.execute();
-		}
-		System.out.println("sending " + requestCount);
-
-		long start = System.currentTimeMillis();
-		Response response = f.get();
-		long took = System.currentTimeMillis() - start;
-		System.out.println("Done, request took: " + took);
-		if (imageToSendToServer != null && took > 3000) {
-			useGIF = true;
-		}
-
-		if (response.getStatusCode() != 200) {
-			response.getResponseBody();
-			throw new Exception("Got status line: " + response.getStatusText());
-		}
-
-		try (ObjectInputStream ois = new ObjectInputStream(response.getResponseBodyAsStream());) {
-			processServerResponse(ois);
-		}
-	}
-
-	protected String readNextToken(ObjectInputStream ois) throws IOException {
-		return ois.readLine();
-	}
-
-	protected void processServerResponse(ObjectInputStream ois) throws NumberFormatException, IOException {
-		isInputControlledByServer = ois.readBoolean();
-		int pictureInterval = ois.readInt();
-		if (imageToSendToServer != null) {
+			networkOutputStream.writeInt(bos.size());
+			networkOutputStream.write(bos.toByteArray());
 			takeNextPictureAt = System.currentTimeMillis() + pictureInterval;
 		}
-		long lastUserStatusReset = ois.readLong();
-		if (lastUserStatusReset != oldLastUserStatusReset) {
-			oldLastUserStatusReset = lastUserStatusReset;
-			if (onResetUserStatus != null) {
-				Platform.runLater(onResetUserStatus); // faster but could run into a race condition, in this project it does not matter
-			}
-		}
 
+		if (!userStatus.equals(oldUserStatus)) {
+			oldUserStatus = userStatus;
+			networkOutputStream.writeChar('u');
+			networkOutputStream.writeString(userStatus.name());
+		}
+		networkOutputStream.writeChar('i'); // idle command = keep alive
+		networkOutputStream.flush();
+		System.out.println("finished");
+	}
+
+	protected void createClientSocket() throws UnknownHostException, IOException {
+		System.out.println("Creating new client socket");
+
+		int index = serverAddress.indexOf(':');
+		String host = index > -1 ? serverAddress.substring(0, index) : serverAddress;
+		int port = index > -1 ? Integer.parseInt(serverAddress.substring(index + 1)) : 9876;
+
+		clientSocket = new Socket(host, port);
+		clientSocket.setSoTimeout(60000);
+		networkOutputStream = new NetworkOutputStream(clientSocket.getOutputStream());
+		networkOutputStream.writeString(userName);
+
+		readThread = new Thread() {
+
+			@Override
+			public void run() {
+				try (NetworkInputStream networkInputStream = new NetworkInputStream(clientSocket.getInputStream());) {
+					while (!isInterrupted()) {
+						char command = networkInputStream.readChar();
+						switch (command) {
+							case 'i' :
+								int oldPictureInterval = pictureInterval;
+								pictureInterval = networkInputStream.readInt();
+								takeNextPictureAt = System.currentTimeMillis() - oldPictureInterval + pictureInterval;
+								System.out.println("Setting picture interval to " + pictureInterval);
+								break;
+							case 'c' :
+								isInputControlledByServer = networkInputStream.readBoolean();
+								break;
+							case 'r' :
+								if (onResetUserStatus != null) {
+									Platform.runLater(onResetUserStatus); // faster but could run into a race condition, in this project it does not matter
+								}
+								break;
+							case 'm' :
+								controlInputDevices(networkInputStream);
+								break;
+							default :
+								break;
+						}
+					}
+				} catch (IOException e) {
+					e.printStackTrace();
+					resetServerConnection();
+				}
+			}
+		};
+		readThread.setDaemon(false);
+		readThread.start();
+	}
+
+	protected void controlInputDevices(NetworkInputStream networkInputStream) throws NumberFormatException, IOException {
 		//TODO: empty the connection stream first and then process the event -> much cleaner
-		int count = ois.readInt();
+		int count = networkInputStream.readInt();
 		for (int index = 0; index < count; index++) {
-			String command = readNextToken(ois);
+			char command = networkInputStream.readChar();
 			switch (command) {
-				case "kp" :
-					robot.keyPress(getCodeForKey(readNextToken(ois)));
+				case 'a' :
+					robot.keyPress(getCodeForKey(networkInputStream.readString()));
 					break;
-				case "kr" :
-					robot.keyRelease(getCodeForKey(readNextToken(ois)));
+				case 'b' :
+					robot.keyRelease(getCodeForKey(networkInputStream.readString()));
 					break;
-				case "mm" :
-					robot.mouseMove(screenBounds.x + Integer.parseInt(readNextToken(ois)), screenBounds.y + Integer.parseInt(readNextToken(ois)));
+				case 'c' :
+					robot.mouseMove(screenBounds.x + networkInputStream.readInt(), screenBounds.y + networkInputStream.readInt());
 					break;
-				case "mp" :
-					robot.mousePress(InputEvent.getMaskForButton(Integer.parseInt(readNextToken(ois))));
+				case 'd' :
+					robot.mousePress(InputEvent.getMaskForButton(networkInputStream.readInt()));
 					break;
-				case "mr" :
-					robot.mouseRelease(InputEvent.getMaskForButton(Integer.parseInt(readNextToken(ois))));
+				case 'e' :
+					robot.mouseRelease(InputEvent.getMaskForButton(networkInputStream.readInt()));
 					break;
 			}
 		}

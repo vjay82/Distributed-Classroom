@@ -8,42 +8,6 @@
 	<classpathentry kind="lib" path="lib/log4j2/log4j-api-2.6.2.jar"/>
 	<classpathentry kind="lib" path="lib/log4j2/log4j-core-2.6.2.jar"/>
 	<classpathentry kind="lib" path="lib/commons-lang3-3.4.jar"/>
-	<classpathentry kind="lib" path="lib/proxy_vole-1.0.1-SNAPSHOT.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/cdi-core-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/cdi-servlet-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/cdi-websocket-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-alpn-server-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-annotations-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-client-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-continuation-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-deploy-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-gcloud-memcached-session-manager-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-gcloud-session-manager-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-http-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-infinispan-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-io-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-jaas-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-jaspi-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-jmx-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-jndi-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-nosql-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-plus-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-proxy-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-quickstart-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-rewrite-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-schemas-3.1.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-security-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-server-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-servlet-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-servlets-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-util-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-webapp-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/jetty-xml-9.3.13.v20161014.jar"/>
-	<classpathentry kind="lib" path="lib/Jetty/servlet-api-3.1.jar"/>
-	<classpathentry kind="lib" path="lib/Netty/async-http-client-2.1.0-alpha1.jar"/>
-	<classpathentry kind="lib" path="lib/Netty/netty-all-4.1.6.Final.jar"/>
 	<classpathentry kind="lib" path="lib/log4j2/log4j-slf4j-impl-2.7.jar"/>
-	<classpathentry kind="lib" path="lib/Netty/reactive-streams-1.0.0.jar"/>
-	<classpathentry kind="lib" path="lib/slf4j-api-1.7.21.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

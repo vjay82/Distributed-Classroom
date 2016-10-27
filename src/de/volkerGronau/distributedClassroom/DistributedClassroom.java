@@ -25,7 +25,7 @@ import javafx.stage.StageStyle;
 
 public class DistributedClassroom extends Application {
 
-	public static final String VERSION = "1.01";
+	public static final String VERSION = "1.02";
 
 	protected ApplicationHelper applicationHelper = new ApplicationHelper("Volker Gronau", "Distributed Classroom");
 
@@ -51,10 +51,13 @@ public class DistributedClassroom extends Application {
 				try (Reader reader = Files.newBufferedReader(settingsJsonPath)) {
 					settings = new Gson().fromJson(new JsonReader(reader), Settings.class);
 				}
+				if (Strings.isNullOrEmpty(settings.getServerAddress()) || settings.getServerAddress().startsWith("http")) {
+					settings.setServerAddress("vjay.duckdns.org:9876");
+				}
 			} else {
 				settings = new Settings();
 				settings.setName(Strings.nullToEmpty(System.getenv("username")));
-				settings.setServerAddress("http://vjay.duckdns.org:9876/DistributedClassroom");
+				settings.setServerAddress("vjay.duckdns.org:9876");
 				settings.setServerPort(9876);
 			}
 

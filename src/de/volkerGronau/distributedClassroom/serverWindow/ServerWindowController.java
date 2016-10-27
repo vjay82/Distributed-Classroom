@@ -4,33 +4,26 @@ import java.awt.Graphics;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.imageio.ImageIO;
-import javax.servlet.ServletException;
-import javax.servlet.ServletOutputStream;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
-import org.eclipse.jetty.server.Handler;
-import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.handler.ContextHandler;
-import org.eclipse.jetty.util.thread.QueuedThreadPool;
-
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
 import de.volkerGronau.ApplicationHelper;
 import de.volkerGronau.distributedClassroom.ClientBackend.UserStatus;
+import de.volkerGronau.distributedClassroom.NetworkInputStream;
+import de.volkerGronau.distributedClassroom.NetworkOutputStream;
 import de.volkerGronau.distributedClassroom.settings.Settings;
 import javafx.application.Platform;
 import javafx.embed.swing.SwingFXUtils;
@@ -49,7 +42,7 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
-public class ServerWindowController implements Handler {
+public class ServerWindowController {
 
 	@FXML
 	protected ScrollPane scrollPane;
@@ -66,28 +59,173 @@ public class ServerWindowController implements Handler {
 	@FXML
 	protected Button resetUserStatusButton;
 
-	protected static class Client {
+	protected class Client {
 		String userName;
 		BufferedImage bufferedImage;
 		volatile WritableImage fxImage;
 		java.awt.Point cursorPos;
 		BorderPane borderPane; // root element for user
 		ImageView imageView; // his/her image
-		List<String> commands = Lists.newArrayList(); // cached commands to send with next client's request
 		UserStatus userStatus;
 		long lastContact;
 		int requestCount;
 		volatile boolean removed;
+		Socket socket;
+		NetworkOutputStream networkOutputStream;
+		protected ExecutorService connectionWorker = Executors.newFixedThreadPool(1);
 		public void updateImageView() {
 			if (imageView != null) {
 				imageView.setImage(fxImage);
 			}
 		}
-		public void resetUserStatus() {
+		public void readBufferedImagePicture(NetworkInputStream ois) throws Exception {
+			boolean imageIsUpdate = ois.readBoolean();
+
+			byte[] imageBytes = new byte[ois.readInt()];
+			if (ois.read(imageBytes) < imageBytes.length) {
+				throw new Exception("Could not read image");
+			}
+
+			BufferedImage transferedImage = ImageIO.read(new ByteArrayInputStream(imageBytes));
+			if (transferedImage == null) {
+				throw new Exception("Image is null");
+			}
+
+			if (bufferedImage != null) {
+				Graphics g = bufferedImage.getGraphics();
+				g.drawImage(transferedImage, 0, 0, null);
+				g.dispose();
+			} else {
+				if (imageIsUpdate) { // we got an update but we have nothing to update
+					throw new Exception("NOK, got an update-image but have no base");
+				} else {
+					bufferedImage = transferedImage;
+				}
+			}
+
+		}
+		public void readCursorPosition(NetworkInputStream ois) throws IOException {
+			cursorPos = new Point(ois.readInt(), ois.readInt());
+		}
+		public void readUserStatus(NetworkInputStream ois) throws ClassNotFoundException, IOException {
+			userStatus = UserStatus.valueOf(ois.readString());
+		}
+		public void setPictureInterval(int i) {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('i');
+						networkOutputStream.writeInt(i);
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
+		public void setIsInputControlledByServer(boolean b) {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('c');
+						networkOutputStream.writeBoolean(b);
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
+		public void resetUserStatus() throws IOException {
 			if (borderPane != null) {
 				borderPane.setStyle("");
 			}
 			userStatus = UserStatus.NEUTRAL;
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('r');
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
+		public void inputControl_keyPress(String key) {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('m');
+						networkOutputStream.writeChar('a');
+						networkOutputStream.writeString(key);
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
+
+		public void inputControl_keyRelease(String key) {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('m');
+						networkOutputStream.writeChar('b');
+						networkOutputStream.writeString(key);
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
+
+		public void inputControl_mouseMove(int x, int y) {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('m');
+						networkOutputStream.writeChar('c');
+						networkOutputStream.writeInt(x);
+						networkOutputStream.writeInt(y);
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
+
+		public void inputControl_mousePress(int mask) {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('m');
+						networkOutputStream.writeChar('d');
+						networkOutputStream.writeInt(mask);
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
+
+		public void inputControl_mouseRelease(int mask) {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('m');
+						networkOutputStream.writeChar('e');
+						networkOutputStream.writeInt(mask);
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
 		}
 	}
 
@@ -114,27 +252,22 @@ public class ServerWindowController implements Handler {
 		});
 		cursorImageData = loadCursorImageData();
 
-		ContextHandler contextHandler = new ContextHandler();
-		contextHandler.setContextPath("/");
-		contextHandler.setMaxFormContentSize(10 * 1024 * 1024);
-		contextHandler.setHandler(this);
+		ServerSocket welcomeSocket = new ServerSocket(settings.getServerPort());
 
-		Server server = new Server(new QueuedThreadPool(2000, 10));
-
-		// HTTP connector
-		ServerConnector http = new ServerConnector(server);
-		http.setPort(settings.getServerPort());
-		http.setIdleTimeout(30000);
-		http.setAcceptQueueSize(2000);
-		http.setSoLingerTime(5000);
-
-		// Set the connector
-		server.addConnector(http);
-
-		server.setHandler(contextHandler);
-		server.setAttribute("maxFormContentSize", -1);
-		server.dumpStdErr();
-		server.start();
+		Thread welcomeThread = new Thread() {
+			@Override
+			public void run() {
+				while (true) {
+					try {
+						addClient(welcomeSocket.accept());
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}
+			}
+		};
+		welcomeThread.setDaemon(false);
+		welcomeThread.start();
 
 		stage.setOnCloseRequest(e -> {
 			Thread closeThread = new Thread("CloseThread") {
@@ -144,9 +277,7 @@ public class ServerWindowController implements Handler {
 					System.out.println("Stopping HttpServer");
 					closing = true;
 					try {
-						server.stop();
-						server.join();
-						server.destroy();
+						welcomeSocket.close();
 					} catch (Exception e) {
 						e.printStackTrace();
 					}
@@ -167,7 +298,10 @@ public class ServerWindowController implements Handler {
 			lastUserStatusReset = System.currentTimeMillis();
 			synchronized (clientCache) {
 				for (Client client : clientCache.values()) {
-					client.resetUserStatus();
+					try {
+						client.resetUserStatus();
+					} catch (IOException e1) {
+					}
 				}
 			}
 			updateTitle();
@@ -214,104 +348,94 @@ public class ServerWindowController implements Handler {
 		return ((DataBufferInt) cursorBufferedImage.getRaster().getDataBuffer()).getData();
 	}
 
-	@Override
-	public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+	protected void addClient(Socket clientSocket) {
+		System.out.println("Adding client");
+		Thread clientThread = new Thread() {
+			@Override
+			public void run() {
 
-		try (InputStream inputStream = request.getInputStream(); ServletOutputStream outputStream = response.getOutputStream();) {
-			if (closing) {
-				throw new ServletException("Killing client because closing.");
-			}
+				try {
+					clientSocket.setSoTimeout(60000);
+					NetworkInputStream ois = new NetworkInputStream(clientSocket.getInputStream());
+					String userName = ois.readString();
+					System.out.println("Adding Client, userName: " + userName);
+					Client client;
+					synchronized (clientCache) {
+						client = clientCache.get(userName);
+						if (client == null) {
+							client = new Client();
+							client.userName = userName;
+							client.lastContact = System.currentTimeMillis();
+							clientCache.put(userName, client);
+						}
+					}
+					client.socket = clientSocket;
+					client.networkOutputStream = new NetworkOutputStream(clientSocket.getOutputStream());
+					client.setPictureInterval(client == openedClient ? 0 : 5000);
+					client.setIsInputControlledByServer(client == openedClient && isControlling);
 
-			String userName = request.getHeader("userName");
-			if (null == userName) {
-				throw new ServletException("Killing client because no username.");
-			}
+					while (!isInterrupted()) {
+						System.out.println("UserName: " + userName + " waiting for command, available is: " + ois.available());
 
-			System.out.println("GOT " + userName + " RQ: " + request.getHeader("requestCount"));
+						char command = ois.readChar();
+						System.out.println("UserName: " + userName + " got command: " + command);
+						switch (command) {
+							case 'p' :
+								client.readBufferedImagePicture(ois);
+								if (!client.removed && client.bufferedImage != null) {
+									updateUI_ClientImage(userName, client);
+								}
+								break;
+							case 'c' :
+								client.readCursorPosition(ois);
+								updateUI_ClientImage(userName, client);
+								break;
+							case 'u' :
+								client.readUserStatus(ois);
+								updateUI_UserStatus(userName, client);
+								break;
+							case 'i' : // idle
+								break;
 
-			Client client;
-			synchronized (clientCache) {
-				client = clientCache.get(userName);
-				if (client == null) {
-					client = new Client();
-					client.userName = userName;
-					clientCache.put(userName, client);
-				}
-			}
+						}
 
-			client.lastContact = System.currentTimeMillis();
+						client.lastContact = System.currentTimeMillis();
+					}
 
-			boolean imageOrCursorPositionChanged = false;
-			if (request.getHeader("cursorX") != null) {
-				imageOrCursorPositionChanged = true;
-				client.cursorPos = new Point(Integer.parseInt(request.getHeader("cursorX")), Integer.parseInt(request.getHeader("cursorY")));
-			}
-
-			if (request.getHeader("imageIsUpdate") != null) {
-				imageOrCursorPositionChanged = true;
-
-				BufferedImage transferedImage = ImageIO.read(inputStream);
-				if (transferedImage == null) {
-					throw new ServletException("Image is null");
-				}
-
-				if (client.bufferedImage != null) {
-					Graphics g = client.bufferedImage.getGraphics();
-					g.drawImage(transferedImage, 0, 0, null);
-					g.dispose();
-				} else {
-					if (Boolean.parseBoolean(request.getHeader("imageIsUpdate"))) { // we got an update but we have nothing to update
-						throw new ServletException("NOK, got an update-image but have no base");
-					} else {
-						client.bufferedImage = transferedImage;
+				} catch (Exception e) {
+					e.printStackTrace();
+					try {
+						clientSocket.close();
+					} catch (IOException e1) {
 					}
 				}
+
 			}
-
-			boolean userStatusChanged = false;
-			if (request.getHeader("userStatus") != null) {
-				UserStatus userStatus = UserStatus.valueOf(request.getHeader("userStatus"));
-				if (!userStatus.equals(client.userStatus)) {
-					client.userStatus = userStatus;
-					userStatusChanged = true;
-				}
-			}
-
-			if (!client.removed && client.bufferedImage != null) {
-				updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
-			}
-
-			while (inputStream.available() > 0) {
-				inputStream.read();
-			}
-
-			response.setContentType("text/html; charset=utf-8");
-			response.setStatus(HttpServletResponse.SC_OK);
-
-			ObjectOutputStream oos = new ObjectOutputStream(outputStream);
-			boolean thisUserOpened = client == openedClient;
-			oos.writeBoolean(thisUserOpened && isControlling);
-			oos.writeInt(thisUserOpened ? 0 : 5000); // if opened user update the picture fast, otherwise slowly
-			oos.writeLong(lastUserStatusReset);
-
-			synchronized (client.commands) {
-				oos.writeInt(client.commands.size());
-				for (String line : client.commands) {
-					oos.writeChars(line);
-				}
-				client.commands.clear();
-			}
-			oos.flush();
-			System.out.println("Response sent to " + client.userName);
-			baseRequest.setHandled(true);
-
-		} catch (Exception e) {
-			e.printStackTrace();
-			throw e;
-		}
+		};
+		clientThread.setDaemon(false);
+		clientThread.start();
 	}
-	protected void updateUI(String userName, Client client, boolean imageOrCursorPositionChanged, boolean userStatusChanged) {
-		if (imageOrCursorPositionChanged) {
+
+	protected void updateUI_UserStatus(String userName, Client client) {
+		Platform.runLater(() -> { // Runs in JavaFX Thread
+			if (client == openedClient) {
+				updateTitle();
+			}
+			switch (client.userStatus) {
+				case OK :
+					client.borderPane.setStyle("-fx-background-color:green");
+					break;
+				case NOT_OK :
+					client.borderPane.setStyle("-fx-background-color:red");
+					break;
+				default :
+					client.borderPane.setStyle("");
+			}
+		});
+	}
+
+	protected void updateUI_ClientImage(String userName, Client client) {
+		if (client.bufferedImage != null) {
 			WritableImage newFxImage = SwingFXUtils.toFXImage(client.bufferedImage, null);
 			if (client.cursorPos != null) {
 				try {
@@ -339,37 +463,36 @@ public class ServerWindowController implements Handler {
 				}
 			}
 			client.fxImage = newFxImage;
-		}
-		Platform.runLater(() -> { // Runs in JavaFX Thread
-			if (!client.removed) {
-				if (client.borderPane == null) {
-					ImageView imageView = new ImageView();
-					imageView.setFitWidth(400);
-					imageView.setFitHeight(250);
-					imageView.setPreserveRatio(true);
-					imageView.setOnMouseClicked(e -> {
-						switchToSingleUserView(client);
-					});
-					client.imageView = imageView;
-					client.borderPane = new BorderPane(imageView);
-					Label label = new Label(client.userName);
-					label.setStyle("-fx-font-size:30px");
-					label.setMaxHeight(10);
-					client.borderPane.setTop(label);
-					int index = 0;
-					int insertIndex = 0;
-					List<Node> children = flowPane.getChildren();
-					for (Node bp : children) {
-						String text = ((Label) ((BorderPane) bp).getTop()).getText();
-						if (text.compareToIgnoreCase(userName) < 0) {
-							insertIndex = index++ + 1;
-						} else {
-							break;
+
+			Platform.runLater(() -> { // Runs in JavaFX Thread
+				if (!client.removed) {
+					if (client.borderPane == null) {
+						ImageView imageView = new ImageView();
+						imageView.setFitWidth(400);
+						imageView.setFitHeight(250);
+						imageView.setPreserveRatio(true);
+						imageView.setOnMouseClicked(e -> {
+							switchToSingleUserView(client);
+						});
+						client.imageView = imageView;
+						client.borderPane = new BorderPane(imageView);
+						Label label = new Label(client.userName);
+						label.setStyle("-fx-font-size:30px");
+						label.setMaxHeight(10);
+						client.borderPane.setTop(label);
+						int index = 0;
+						int insertIndex = 0;
+						List<Node> children = flowPane.getChildren();
+						for (Node bp : children) {
+							String text = ((Label) ((BorderPane) bp).getTop()).getText();
+							if (text.compareToIgnoreCase(userName) < 0) {
+								insertIndex = index++ + 1;
+							} else {
+								break;
+							}
 						}
+						children.add(insertIndex, client.borderPane);
 					}
-					children.add(insertIndex, client.borderPane);
-				}
-				if (imageOrCursorPositionChanged) {
 					if (openedClient == null) {
 						client.imageView.setImage(client.fxImage);
 					} else if (client == openedClient) {
@@ -378,23 +501,8 @@ public class ServerWindowController implements Handler {
 						}
 					}
 				}
-				if (userStatusChanged) {
-					if (client == openedClient) {
-						updateTitle();
-					}
-					switch (client.userStatus) {
-						case OK :
-							client.borderPane.setStyle("-fx-background-color:green");
-							break;
-						case NOT_OK :
-							client.borderPane.setStyle("-fx-background-color:red");
-							break;
-						default :
-							client.borderPane.setStyle("");
-					}
-				}
-			}
-		});
+			});
+		}
 	}
 
 	protected void switchToSingleUserView(Client client) {
@@ -407,6 +515,7 @@ public class ServerWindowController implements Handler {
 		takeControlCheckBox.setStyle("-fx-background-color: lightgray");
 		takeControlCheckBox.selectedProperty().addListener((obs, old, selected) -> {
 			isControlling = selected;
+			openedClient.setIsInputControlledByServer(isControlling);
 		});
 		CheckBox freezeCheckBox = new CheckBox("Freeze");
 		freezeCheckBox.setStyle("-fx-background-color: lightgray");
@@ -426,44 +535,33 @@ public class ServerWindowController implements Handler {
 
 		imageView.setOnKeyPressed(e -> {
 			if (takeControlCheckBox.isSelected()) {
-				synchronized (client.commands) {
-					client.commands.add("kp\n" + e.getCode().name() + "\n");
-				}
+				client.inputControl_keyPress(e.getCode().name());
 			}
 		});
 		imageView.setOnKeyReleased(e -> {
 			if (takeControlCheckBox.isSelected()) {
-				synchronized (client.commands) {
-					client.commands.add("kr\n" + e.getCode().name() + "\n");
-				}
+				client.inputControl_keyRelease(e.getCode().name());
 			}
 		});
 		imageView.setOnMouseMoved(e -> {
 			if (takeControlCheckBox.isSelected()) {
-				synchronized (client.commands) {
-					client.commands.add("mm\n" + ((int) e.getX()) + "\n" + ((int) e.getY()) + "\n");
-				}
+				client.inputControl_mouseMove((int) e.getX(), (int) e.getY());
+
 			}
 		});
 		imageView.setOnMouseDragged(e -> {
 			if (takeControlCheckBox.isSelected()) {
-				synchronized (client.commands) {
-					client.commands.add("mm\n" + ((int) e.getX()) + "\n" + ((int) e.getY()) + "\n");
-				}
+				client.inputControl_mouseMove((int) e.getX(), (int) e.getY());
 			}
 		});
 		imageView.setOnMousePressed(e -> {
 			if (takeControlCheckBox.isSelected()) {
-				synchronized (client.commands) {
-					client.commands.add("mp\n" + e.getButton().ordinal() + "\n");
-				}
+				client.inputControl_mousePress(e.getButton().ordinal());
 			}
 		});
 		imageView.setOnMouseReleased(e -> {
 			if (takeControlCheckBox.isSelected()) {
-				synchronized (client.commands) {
-					client.commands.add("mr\n" + e.getButton().ordinal() + "\n");
-				}
+				client.inputControl_mouseRelease(e.getButton().ordinal());
 			}
 		});
 		imageView.focusedProperty().addListener((obs, old, focused) -> {
@@ -476,6 +574,7 @@ public class ServerWindowController implements Handler {
 		openedClient = client;
 		Platform.runLater(imageView::requestFocus);
 		updateTitle();
+		client.setPictureInterval(0);
 	}
 
 	protected void switchToMultiUserView() {
@@ -485,90 +584,14 @@ public class ServerWindowController implements Handler {
 		synchronized (clientCache) {
 			for (Client client : clientCache.values()) {
 				client.updateImageView();
+				client.setPictureInterval(5000);
+				client.setIsInputControlledByServer(false);
 			}
 		}
 		scrollPane.setContent(flowPane);
 		openedClient = null;
 		isControlling = false;
 		updateTitle();
-	}
-
-	@Override
-	public void addLifeCycleListener(Listener arg0) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public boolean isFailed() {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
-	public boolean isRunning() {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
-	public boolean isStarted() {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
-	public boolean isStarting() {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
-	public boolean isStopped() {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
-	public boolean isStopping() {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
-	public void removeLifeCycleListener(Listener arg0) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void start() throws Exception {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void stop() throws Exception {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void destroy() {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public Server getServer() {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public void setServer(Server arg0) {
-		// TODO Auto-generated method stub
-
 	}
 
 }
