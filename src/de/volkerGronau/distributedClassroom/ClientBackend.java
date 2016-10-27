@@ -54,6 +54,7 @@ public class ClientBackend {
 	protected long oldLastUserStatusReset;
 	protected int hotPixels;
 	protected int hotPixelHitCount;
+	protected int requestCount = 0;
 
 	public ClientBackend(Screen screen, String name, String serverAddress) throws Exception {
 		super();
@@ -144,8 +145,8 @@ public class ClientBackend {
 			}
 
 		} catch (Exception e) {
-			resetServerConnection();
 			e.printStackTrace();
+			resetServerConnection();
 		}
 	}
 
@@ -154,6 +155,7 @@ public class ClientBackend {
 		oldCursorPosition = null;
 		oldUserStatus = null;
 		proxy = null; // Reset detected proxy on communication error
+		requestCount = 0;
 	}
 
 	protected void contactServer() {
@@ -161,7 +163,7 @@ public class ClientBackend {
 	}
 
 	protected URL getURL() throws MalformedURLException {
-		StringBuilder result = new StringBuilder(urlBaseString);
+		StringBuilder result = new StringBuilder(urlBaseString).append("&requestCount=").append(requestCount++);
 		if (!userStatus.equals(oldUserStatus)) {
 			oldUserStatus = userStatus;
 			result.append("&userStatus=").append(userStatus);
@@ -186,8 +188,8 @@ public class ClientBackend {
 
 		URLConnection connection = getURL().openConnection(proxy);
 		connection.setUseCaches(false);
-		connection.setConnectTimeout(2000);
-		connection.setReadTimeout(5000);
+		connection.setConnectTimeout(20000);
+		connection.setReadTimeout(20000);
 
 		MutableBoolean result = new MutableBoolean(false);
 		Thread sendThread = new Thread() {

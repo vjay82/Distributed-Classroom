@@ -72,6 +72,7 @@ public class ServerWindowController implements HttpHandler {
 		List<String> commands = Lists.newArrayList(); // cached commands to send with next client's request
 		UserStatus userStatus;
 		long lastContact;
+		int requestCount;
 		volatile boolean removed;
 		public void updateImageView() {
 			if (imageView != null) {
@@ -198,100 +199,119 @@ public class ServerWindowController implements HttpHandler {
 
 	@Override
 	public void handle(HttpExchange httpExchange) throws IOException {
-		if (closing) {
-			httpExchange.close();
-		}
-
-		String result = "OK";
-		String query = httpExchange.getRequestURI().getQuery();
-
-		System.out.println(query);
-
-		Map<String, String> parameters = Maps.newHashMap();
-		for (String param : Splitter.on("&").split(query)) {
-			int index = param.indexOf('=');
-			if (index != -1) {
-				parameters.put(param.substring(0, index), param.substring(index + 1));
+		try {
+			if (closing) {
+				httpExchange.close();
+				return;
 			}
-		}
 
-		String userName = URLDecoder.decode(parameters.get("userName"), "UTF-8");
+			String result = "OK";
+			String query = httpExchange.getRequestURI().getQuery();
 
-		Client client;
-		synchronized (clientCache) {
-			client = clientCache.get(userName);
-			if (client == null) {
-				client = new Client();
-				client.userName = userName;
-				clientCache.put(userName, client);
-			}
-		}
+			System.out.println(query);
 
-		client.lastContact = System.currentTimeMillis();
-
-		boolean imageOrCursorPositionChanged = false;
-		if (parameters.containsKey("cursorX")) {
-			imageOrCursorPositionChanged = true;
-			client.cursorPos = new Point(Integer.parseInt(parameters.get("cursorX")), Integer.parseInt(parameters.get("cursorY")));
-		}
-
-		if (parameters.containsKey("imageIsUpdate")) {
-			imageOrCursorPositionChanged = true;
-			//			System.out.println(client.userName + " starting read");
-
-			//			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-			//			int nRead;
-			//			byte[] data = new byte[16384];
-			//			InputStream is = httpExchange.getRequestBody();
-			//			while ((nRead = is.read(data, 0, data.length)) != -1) {
-			//				buffer.write(data, 0, nRead);
-			//			}
-
-			BufferedImage transferedImage = ImageIO.read(httpExchange.getRequestBody());
-			//			System.out.println(client.userName + " finished read");
-
-			if (client.bufferedImage != null) {
-				Graphics g = client.bufferedImage.getGraphics();
-				g.drawImage(transferedImage, 0, 0, null);
-				g.dispose();
-			} else {
-				if (Boolean.parseBoolean(parameters.get("imageIsUpdate"))) { // we got an update but we have nothing to update
-					result = "NOK, got an update-image but have no base";
-				} else {
-					client.bufferedImage = transferedImage;
+			Map<String, String> parameters = Maps.newHashMap();
+			for (String param : Splitter.on("&").split(query)) {
+				int index = param.indexOf('=');
+				if (index != -1) {
+					parameters.put(param.substring(0, index), param.substring(index + 1));
 				}
 			}
-		}
 
-		boolean userStatusChanged = false;
-		if (parameters.containsKey("userStatus")) {
-			UserStatus userStatus = UserStatus.valueOf(parameters.get("userStatus"));
-			if (!userStatus.equals(client.userStatus)) {
-				client.userStatus = userStatus;
-				userStatusChanged = true;
+			String userName = URLDecoder.decode(parameters.get("userName"), "UTF-8");
+
+			Client client;
+			synchronized (clientCache) {
+				client = clientCache.get(userName);
+				if (client == null) {
+					client = new Client();
+					client.userName = userName;
+					clientCache.put(userName, client);
+				}
 			}
-		}
 
-		//		System.out.println("result:" + result);
-		if ("OK".equals(result)) {
-			updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
-		}
-
-		boolean thisUserOpened = client == openedClient;
-		StringBuilder response = new StringBuilder(result).append('\n').append(thisUserOpened && isControlling).append('\n');
-		response.append(thisUserOpened ? "0" : "5000").append('\n'); // if opened user update the picture fast, otherwise slowly
-		response.append(lastUserStatusReset).append('\n');
-		synchronized (client.commands) {
-			for (String line : client.commands) {
-				response.append(line);
+			String requestCountStr = parameters.get("requestCount");
+			if (requestCountStr == null) {
+				httpExchange.close();
+				return;
 			}
-			client.commands.clear();
-		}
 
-		httpExchange.sendResponseHeaders(200, response.length());
-		OutputStream os = httpExchange.getResponseBody();
-		os.write(response.toString().getBytes(StandardCharsets.UTF_8));
-		os.close();
+			int requestCount = Integer.parseInt(requestCountStr);
+			if (requestCount > 0 && client.requestCount > requestCount) {
+				httpExchange.close();
+				return;
+			}
+
+			client.requestCount = requestCount;
+			client.lastContact = System.currentTimeMillis();
+
+			boolean imageOrCursorPositionChanged = false;
+			if (parameters.containsKey("cursorX")) {
+				imageOrCursorPositionChanged = true;
+				client.cursorPos = new Point(Integer.parseInt(parameters.get("cursorX")), Integer.parseInt(parameters.get("cursorY")));
+			}
+
+			if (parameters.containsKey("imageIsUpdate")) {
+				imageOrCursorPositionChanged = true;
+				//			System.out.println(client.userName + " starting read");
+
+				//			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+				//			int nRead;
+				//			byte[] data = new byte[16384];
+				//			InputStream is = httpExchange.getRequestBody();
+				//			while ((nRead = is.read(data, 0, data.length)) != -1) {
+				//				buffer.write(data, 0, nRead);
+				//			}
+
+				BufferedImage transferedImage = ImageIO.read(httpExchange.getRequestBody());
+				//			System.out.println(client.userName + " finished read");
+
+				if (client.bufferedImage != null) {
+					Graphics g = client.bufferedImage.getGraphics();
+					g.drawImage(transferedImage, 0, 0, null);
+					g.dispose();
+				} else {
+					if (Boolean.parseBoolean(parameters.get("imageIsUpdate"))) { // we got an update but we have nothing to update
+						result = "NOK, got an update-image but have no base";
+					} else {
+						client.bufferedImage = transferedImage;
+					}
+				}
+			}
+
+			boolean userStatusChanged = false;
+			if (parameters.containsKey("userStatus")) {
+				UserStatus userStatus = UserStatus.valueOf(parameters.get("userStatus"));
+				if (!userStatus.equals(client.userStatus)) {
+					client.userStatus = userStatus;
+					userStatusChanged = true;
+				}
+			}
+
+			//		System.out.println("result:" + result);
+			if ("OK".equals(result)) {
+				updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
+			}
+
+			boolean thisUserOpened = client == openedClient;
+			StringBuilder response = new StringBuilder(result).append('\n').append(thisUserOpened && isControlling).append('\n');
+			response.append(thisUserOpened ? "0" : "5000").append('\n'); // if opened user update the picture fast, otherwise slowly
+			response.append(lastUserStatusReset).append('\n');
+			synchronized (client.commands) {
+				for (String line : client.commands) {
+					response.append(line);
+				}
+				client.commands.clear();
+			}
+
+			httpExchange.sendResponseHeaders(200, response.length());
+			OutputStream os = httpExchange.getResponseBody();
+			os.write(response.toString().getBytes(StandardCharsets.UTF_8));
+			os.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+			httpExchange.close();
+		}
 	}
 
 	protected void updateUI(String userName, Client client, boolean imageOrCursorPositionChanged, boolean userStatusChanged) {
