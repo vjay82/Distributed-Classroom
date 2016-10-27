@@ -17,6 +17,7 @@ import java.net.Proxy;
 import java.net.Proxy.Type;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 
@@ -69,6 +70,8 @@ public class ClientBackend {
 	protected HttpClientContext httpClientContext;
 	protected boolean useGIF;
 	protected AnimatedGIFWriter animatedGIFWriter = new AnimatedGIFWriter(false);
+	protected Thread interactionThread;
+	protected volatile long lastCycle;
 
 	public ClientBackend(Screen screen, String name, String serverAddress) throws Exception {
 		super();
@@ -77,7 +80,33 @@ public class ClientBackend {
 		this.urlBaseString = serverAddress + "?userName=" + URLEncoder.encode(name, "UTF-8") + "&version=" + DistributedClassroom.VERSION;
 		this.screenBounds = screen.getBounds();
 
-		Thread thread = new Thread("Server Interactionthread") {
+		createInteractionThread();
+
+		Thread watcherThread = new Thread("Watchdog Thread") {
+			@Override
+			public void run() {
+				try {
+					while (!isInterrupted()) {
+						Thread.sleep(1000);
+						if (lastCycle < System.currentTimeMillis() - 60000) {
+							interactionThread.interrupt();
+							System.out.println("Watchdog - resetting.");
+							resetServerConnection();
+							createInteractionThread();
+						}
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		};
+		watcherThread.setDaemon(false);
+		watcherThread.start();
+	}
+
+	protected void createInteractionThread() {
+		lastCycle = System.currentTimeMillis();
+		interactionThread = new Thread("Server Interactionthread") {
 			@Override
 			public void run() {
 				try {
@@ -85,6 +114,7 @@ public class ClientBackend {
 						long startTime = System.currentTimeMillis();
 						if (httpClient == null) {
 							createHttpClient();
+							lastCycle = System.currentTimeMillis();
 						}
 						updateData();
 						//						if (!isInputControlledByServer) {
@@ -93,21 +123,24 @@ public class ClientBackend {
 							Thread.sleep(waitingTime);
 						}
 						//						}
+						lastCycle = System.currentTimeMillis();
 					}
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
 			}
 		};
-		thread.setDaemon(false);
-		//		thread.setPriority(Thread.MIN_PRIORITY);
-		thread.start();
+		interactionThread.setDaemon(false);
+		interactionThread.start();
 	}
 
 	protected void createHttpClient() {
 		HttpHost httpHost = null;
-		Proxy proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
 		httpClientContext = null;
+
+		Proxy proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
+		System.out.println("Using Proxy: " + proxy);
+
 		if (Type.HTTP.equals(proxy.type())) {
 			String addr = proxy.address().toString();
 			int index = addr.indexOf(':');
@@ -117,16 +150,24 @@ public class ClientBackend {
 				httpHost = new HttpHost(addr);
 			}
 		} else if (Type.SOCKS.equals(proxy.type())) {
-			InetSocketAddress socksaddr = new InetSocketAddress("mysockshost", 1234);
-			httpClientContext = HttpClientContext.create();
-			httpClientContext.setAttribute("socks.address", socksaddr);
+			String addr = proxy.address().toString();
+			int index = addr.indexOf(':');
+			if (index != -1) {
+				InetSocketAddress socksaddr = new InetSocketAddress(addr.substring(0, index), Integer.parseInt(addr.substring(index + 1)));
+				httpClientContext = HttpClientContext.create();
+				httpClientContext.setAttribute("socks.address", socksaddr);
+			} else {
+				InetSocketAddress socksaddr = new InetSocketAddress(addr, 1080);
+				httpClientContext = HttpClientContext.create();
+				httpClientContext.setAttribute("socks.address", socksaddr);
+			}
 		}
-		System.out.println("Using Proxy: " + httpHost);
-		RequestConfig config = RequestConfig.custom().setConnectTimeout(20000).setProxy(httpHost).setSocketTimeout(20000).build();
 
+		RequestConfig config = RequestConfig.custom().setConnectTimeout(20000).setProxy(httpHost).setSocketTimeout(20000).setConnectionRequestTimeout(20000).setContentCompressionEnabled(false).build();
 		HttpClientBuilder builder = HttpClientBuilder.create();
 		builder.setDefaultRequestConfig(config);
-		httpClient = builder.build();
+		builder.setConnectionTimeToLive(20, TimeUnit.SECONDS);
+		httpClient = builder.disableAutomaticRetries().disableContentCompression().build();
 	}
 
 	public void updateData() {
@@ -224,7 +265,7 @@ public class ClientBackend {
 	}
 
 	protected void sendDataToServer() throws Exception {
-
+		System.out.println("sending...");
 		HttpUriRequest httpUriRequest;
 		if (imageToSendToServer == null) {
 			httpUriRequest = new HttpGet(getURL());
@@ -239,12 +280,12 @@ public class ClientBackend {
 			}
 
 			System.out.println("Image size is: " + bos.size());
-			((HttpPost) httpUriRequest).setEntity(new InputStreamEntity(new ByteArrayInputStream(bos.toByteArray())));
+			((HttpPost) httpUriRequest).setEntity(new InputStreamEntity(new ByteArrayInputStream(bos.toByteArray()), bos.size()));
 		}
 		long start = System.currentTimeMillis();
 		CloseableHttpResponse response = httpClient.execute(httpUriRequest, httpClientContext);
 		long took = System.currentTimeMillis() - start;
-		System.out.println("Request took: " + took);
+		System.out.println("Done, request took: " + took);
 
 		if (imageToSendToServer != null && took > 3000) {
 			useGIF = true;

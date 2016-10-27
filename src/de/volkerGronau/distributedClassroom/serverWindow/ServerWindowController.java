@@ -121,8 +121,6 @@ public class ServerWindowController implements Handler {
 		server.setAttribute("maxFormContentSize", -1);
 
 		server.start();
-		//		server.dumpStdErr();
-		//		server.join();
 
 		stage.setOnCloseRequest(e -> {
 			Thread closeThread = new Thread("CloseThread") {
@@ -133,14 +131,12 @@ public class ServerWindowController implements Handler {
 					closing = true;
 					try {
 						server.stop();
+						server.join();
+						server.destroy();
 					} catch (Exception e) {
-						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
 					System.out.println("Closing Application");
-					//					Platform.runLater(() -> {
-					//						Platform.exit();
-					//					});
 					System.exit(0);
 				}
 			};
@@ -160,6 +156,7 @@ public class ServerWindowController implements Handler {
 					client.resetUserStatus();
 				}
 			}
+			updateTitle();
 		});
 
 		Thread removeOldClientsThread = new Thread("RemoveOldClientsThread") {
@@ -205,92 +202,100 @@ public class ServerWindowController implements Handler {
 
 	@Override
 	public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-		if (closing) {
-			throw new ServletException("Killing client because closing.");
-		}
-
-		System.out.println("Request: " + baseRequest.getQueryString());
-
-		String userName = request.getParameter("userName");//URLDecoder.decode(parameters.get("userName"), "UTF-8");
-
-		Client client;
-		synchronized (clientCache) {
-			client = clientCache.get(userName);
-			if (client == null) {
-				client = new Client();
-				client.userName = userName;
-				clientCache.put(userName, client);
-			}
-		}
-
-		//		String requestCountStr = request.getParameter("requestCount");
-		//		if (requestCountStr == null) {
-		//			throw new ServletException("Killing client because requestCount missing.");
-		//		}
-		//
-		//		int requestCount = Integer.parseInt(requestCountStr);
-		//		if (requestCount > 0 && client.requestCount > requestCount) {
-		//			throw new ServletException("Killing client because requestCount to small.");
-		//		}
-
-		//		client.requestCount = requestCount;
-		client.lastContact = System.currentTimeMillis();
-
-		boolean imageOrCursorPositionChanged = false;
-		if (request.getParameter("cursorX") != null) {
-			imageOrCursorPositionChanged = true;
-			client.cursorPos = new Point(Integer.parseInt(request.getParameter("cursorX")), Integer.parseInt(request.getParameter("cursorY")));
-		}
-
-		if (request.getParameter("imageIsUpdate") != null) {
-			imageOrCursorPositionChanged = true;
-
-			BufferedImage transferedImage = ImageIO.read(request.getInputStream());
-			if (transferedImage == null) {
-				throw new ServletException("Image is null");
+		try {
+			System.out.println("Request: " + baseRequest.getQueryString());
+			if (closing) {
+				throw new ServletException("Killing client because closing.");
 			}
 
-			if (client.bufferedImage != null) {
-				Graphics g = client.bufferedImage.getGraphics();
-				g.drawImage(transferedImage, 0, 0, null);
-				g.dispose();
-			} else {
-				if (Boolean.parseBoolean(request.getParameter("imageIsUpdate"))) { // we got an update but we have nothing to update
-					throw new ServletException("NOK, got an update-image but have no base");
-				} else {
-					client.bufferedImage = transferedImage;
+			String userName = request.getParameter("userName");//URLDecoder.decode(parameters.get("userName"), "UTF-8");
+
+			Client client;
+			synchronized (clientCache) {
+				client = clientCache.get(userName);
+				if (client == null) {
+					client = new Client();
+					client.userName = userName;
+					clientCache.put(userName, client);
 				}
 			}
-		}
 
-		boolean userStatusChanged = false;
-		if (request.getParameter("userStatus") != null) {
-			UserStatus userStatus = UserStatus.valueOf(request.getParameter("userStatus"));
-			if (!userStatus.equals(client.userStatus)) {
-				client.userStatus = userStatus;
-				userStatusChanged = true;
+			//		String requestCountStr = request.getParameter("requestCount");
+			//		if (requestCountStr == null) {
+			//			throw new ServletException("Killing client because requestCount missing.");
+			//		}
+			//
+			//		int requestCount = Integer.parseInt(requestCountStr);
+			//		if (requestCount > 0 && client.requestCount > requestCount) {
+			//			throw new ServletException("Killing client because requestCount to small.");
+			//		}
+
+			//		client.requestCount = requestCount;
+			client.lastContact = System.currentTimeMillis();
+
+			boolean imageOrCursorPositionChanged = false;
+			if (request.getParameter("cursorX") != null) {
+				imageOrCursorPositionChanged = true;
+				client.cursorPos = new Point(Integer.parseInt(request.getParameter("cursorX")), Integer.parseInt(request.getParameter("cursorY")));
 			}
-		}
 
-		if (!client.removed && client.bufferedImage != null) {
-			updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
-		}
+			if (request.getParameter("imageIsUpdate") != null) {
+				imageOrCursorPositionChanged = true;
 
-		boolean thisUserOpened = client == openedClient;
-		ServletOutputStream os = response.getOutputStream();
-		os.println(String.valueOf(thisUserOpened && isControlling));
-		os.println(thisUserOpened ? "0" : "5000"); // if opened user update the picture fast, otherwise slowly
-		os.println(String.valueOf(lastUserStatusReset));
+				BufferedImage transferedImage = ImageIO.read(request.getInputStream());
+				if (transferedImage == null) {
+					throw new ServletException("Image is null");
+				}
 
-		synchronized (client.commands) {
-			for (String line : client.commands) {
-				os.print(line);
+				if (client.bufferedImage != null) {
+					Graphics g = client.bufferedImage.getGraphics();
+					g.drawImage(transferedImage, 0, 0, null);
+					g.dispose();
+				} else {
+					if (Boolean.parseBoolean(request.getParameter("imageIsUpdate"))) { // we got an update but we have nothing to update
+						throw new ServletException("NOK, got an update-image but have no base");
+					} else {
+						client.bufferedImage = transferedImage;
+					}
+				}
 			}
-			client.commands.clear();
-		}
 
-		os.flush();
-		baseRequest.setHandled(true);
+			boolean userStatusChanged = false;
+			if (request.getParameter("userStatus") != null) {
+				UserStatus userStatus = UserStatus.valueOf(request.getParameter("userStatus"));
+				if (!userStatus.equals(client.userStatus)) {
+					client.userStatus = userStatus;
+					userStatusChanged = true;
+				}
+			}
+
+			if (!client.removed && client.bufferedImage != null) {
+				updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
+			}
+
+			boolean thisUserOpened = client == openedClient;
+			ServletOutputStream os = response.getOutputStream();
+			os.println(String.valueOf(thisUserOpened && isControlling));
+			os.println(thisUserOpened ? "0" : "5000"); // if opened user update the picture fast, otherwise slowly
+			os.println(String.valueOf(lastUserStatusReset));
+
+			synchronized (client.commands) {
+				for (String line : client.commands) {
+					os.print(line);
+				}
+				client.commands.clear();
+			}
+
+			os.flush();
+			baseRequest.setHandled(true);
+		} catch (Exception e) {
+			e.printStackTrace();
+			try {
+				response.getOutputStream().close();
+			} catch (Exception e2) {
+			}
+			throw e;
+		}
 	}
 	protected void updateUI(String userName, Client client, boolean imageOrCursorPositionChanged, boolean userStatusChanged) {
 		if (imageOrCursorPositionChanged) {
@@ -361,6 +366,9 @@ public class ServerWindowController implements Handler {
 					}
 				}
 				if (userStatusChanged) {
+					if (client == openedClient) {
+						updateTitle();
+					}
 					switch (client.userStatus) {
 						case OK :
 							client.borderPane.setStyle("-fx-background-color:green");
