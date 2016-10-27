@@ -1,6 +1,7 @@
 package de.volkerGronau.distributedClassroom;
 
 import java.awt.MouseInfo;
+import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.event.InputEvent;
 import java.awt.image.BufferedImage;
@@ -38,6 +39,7 @@ public class ClientBackend {
 	protected BufferedImage imageToSendToServer;
 
 	protected Screen screen;
+	protected Rectangle screenBounds;
 	protected String urlBaseString;
 	protected Proxy proxy;
 	protected long takeNextPictureAt = 0;
@@ -58,6 +60,7 @@ public class ClientBackend {
 
 		this.screen = screen;
 		this.urlBaseString = serverAddress + "?userName=" + URLEncoder.encode(name, "UTF-8") + "&version=" + DistributedClassroom.VERSION;
+		this.screenBounds = screen.getBounds();
 
 		Thread thread = new Thread("Server Interactionthread") {
 			@Override
@@ -88,17 +91,10 @@ public class ClientBackend {
 
 	public void updateData() {
 		try {
-
-			java.awt.Point newCursorPosition = MouseInfo.getPointerInfo().getLocation();
-			if (!newCursorPosition.equals(cursorPosition) && screen.getBounds().contains(newCursorPosition)) {
-				cursorPosition = newCursorPosition;
-				contactServer();
-			}
-
 			long currentTimeMillis = System.currentTimeMillis();
 
 			if (takeNextPictureAt < currentTimeMillis) {
-				BufferedImage newBufferedImage = robot.createScreenCapture(screen.getBounds());
+				BufferedImage newBufferedImage = robot.createScreenCapture(screenBounds);
 				if (differenceImage == null) {
 					differenceImage = new BufferedImage(newBufferedImage.getWidth(), newBufferedImage.getHeight(), BufferedImage.TYPE_INT_ARGB);
 				}
@@ -130,6 +126,12 @@ public class ClientBackend {
 				}
 			} else {
 				imageToSendToServer = null;
+			}
+
+			java.awt.Point newCursorPosition = MouseInfo.getPointerInfo().getLocation();
+			if (!newCursorPosition.equals(cursorPosition) && screenBounds.contains(newCursorPosition)) {
+				cursorPosition = newCursorPosition;
+				contactServer();
 			}
 
 			if (nextForcedContact < currentTimeMillis) {
@@ -168,13 +170,13 @@ public class ClientBackend {
 			result.append("&imageIsUpdate=").append(imageToSendToServer == differenceImage);
 			//			result.append("&changedPixels=").append(changedPixels);
 		}
-		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screen.getBounds().contains(cursorPosition)) {
+		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screenBounds.contains(cursorPosition)) {
 			oldCursorPosition = cursorPosition;
-			result.append("&cursorX=").append(oldCursorPosition.x - screen.getBounds().x);
-			result.append("&cursorY=").append(oldCursorPosition.y - screen.getBounds().y);
+			result.append("&cursorX=").append(oldCursorPosition.x - screenBounds.x);
+			result.append("&cursorY=").append(oldCursorPosition.y - screenBounds.y);
 		}
 
-		if (proxy != null && !Proxy.NO_PROXY.equals(proxy)) {
+		if (!Proxy.NO_PROXY.equals(proxy)) {
 			result.append("&r=").append(Math.random()); // Lots of proxies cache anyway, we trick it
 		}
 		return new URL(result.toString());
@@ -266,7 +268,7 @@ public class ClientBackend {
 					robot.keyRelease(getCodeForKey(readNextToken(reader)));
 					break;
 				case "mm" :
-					robot.mouseMove(screen.getBounds().x + Integer.parseInt(readNextToken(reader)), screen.getBounds().y + Integer.parseInt(readNextToken(reader)));
+					robot.mouseMove(screenBounds.x + Integer.parseInt(readNextToken(reader)), screenBounds.y + Integer.parseInt(readNextToken(reader)));
 					break;
 				case "mp" :
 					robot.mousePress(InputEvent.getMaskForButton(Integer.parseInt(readNextToken(reader))));

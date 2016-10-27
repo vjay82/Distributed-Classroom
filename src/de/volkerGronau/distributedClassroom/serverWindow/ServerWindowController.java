@@ -109,8 +109,8 @@ public class ServerWindowController implements HttpHandler {
 		});
 		cursorImageData = loadCursorImageData();
 
-		System.setProperty("sun.net.httpserver.maxReqTime", "20000");
-		System.setProperty("sun.net.httpserver.maxRspTime", "20000");
+		System.setProperty("sun.net.httpserver.maxReqTime", "20");
+		System.setProperty("sun.net.httpserver.maxRspTime", "20");
 
 		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 200);
 		server.createContext("/DistributedClassroom", this);
