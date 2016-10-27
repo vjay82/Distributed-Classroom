@@ -227,6 +227,27 @@ public class ServerWindowController {
 				}
 			});
 		}
+		public void close() {
+			removed = true;
+			connectionWorker.execute(() -> {
+				try {
+					if (networkOutputStream != null) {
+						networkOutputStream.close();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				networkOutputStream = null;
+				try {
+					if (socket != null) {
+						socket.close();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				socket = null;
+			});
+		}
 	}
 
 	protected Map<String, Client> clientCache = Maps.newHashMap();
@@ -320,8 +341,8 @@ public class ServerWindowController {
 							while (iterator.hasNext()) {
 								Client client = iterator.next().getValue();
 								if (client.lastContact < removeOlderThan) {
-									client.removed = true;
 									iterator.remove();
+									client.close();
 									Platform.runLater(() -> {
 										if (client.borderPane != null) {
 											flowPane.getChildren().remove(client.borderPane);

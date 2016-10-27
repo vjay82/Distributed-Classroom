@@ -23,6 +23,9 @@ public class ClientBackend {
 	}
 
 	protected final Robot robot = new Robot();
+	protected AnimatedGIFWriter animatedGIFWriter = new AnimatedGIFWriter(false);
+	protected UserStatus userStatus = UserStatus.NEUTRAL;
+	protected int pictureInterval = 5000;
 
 	protected BufferedImage oldImage;
 	protected BufferedImage differenceImage;
@@ -38,20 +41,17 @@ public class ClientBackend {
 	protected boolean isInputControlledByServer;
 	protected long nextForcedContact = 0;
 	protected Runnable onResetUserStatus;
-	protected UserStatus userStatus = UserStatus.NEUTRAL;
 	protected UserStatus oldUserStatus;
 	protected long oldLastUserStatusReset;
 	protected int hotPixels;
 	protected int hotPixelHitCount;
 	protected int requestCount = 0;
 	protected boolean useGIF;
-	protected AnimatedGIFWriter animatedGIFWriter = new AnimatedGIFWriter(false);
 	protected Thread interactionThread;
 	protected volatile long lastCycle;
 	protected String userName;
 	protected Socket clientSocket;
 	protected Thread readThread;
-	protected int pictureInterval = 5000;
 
 	public ClientBackend(Screen screen, String userName, String serverAddress) throws Exception {
 		super();
@@ -200,13 +200,16 @@ public class ClientBackend {
 			} else {
 				ImageIO.write(imageToSendToServer, "PNG", bos);
 			}
+			takeNextPictureAt = System.currentTimeMillis() + pictureInterval;
+
 			long startTime = System.currentTimeMillis();
 			networkOutputStream.writeInt(bos.size());
 			networkOutputStream.write(bos.toByteArray());
-			if (System.currentTimeMillis() - startTime > 3000) {
+			long timeTaken = System.currentTimeMillis() - startTime;
+			System.out.println("Sending image took: " + timeTaken);
+			if (timeTaken > 2000) {
 				useGIF = true;
 			}
-			takeNextPictureAt = System.currentTimeMillis() + pictureInterval;
 		}
 
 		if (!userStatus.equals(oldUserStatus)) {
