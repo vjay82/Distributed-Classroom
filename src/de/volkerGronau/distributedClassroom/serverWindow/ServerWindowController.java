@@ -72,6 +72,7 @@ public class ServerWindowController implements HttpHandler {
 		List<String> commands = Lists.newArrayList(); // cached commands to send with next client's request
 		UserStatus userStatus;
 		long lastContact;
+		volatile boolean removed;
 		public void updateImageView() {
 			if (imageView != null) {
 				imageView.setImage(fxImage);
@@ -113,7 +114,7 @@ public class ServerWindowController implements HttpHandler {
 
 		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 0);
 		server.createContext("/DistributedClassroom", this);
-		server.setExecutor(Executors.newFixedThreadPool(500));
+		server.setExecutor(Executors.newCachedThreadPool());
 		server.start();
 
 		stage.setOnCloseRequest(e -> {
@@ -167,6 +168,7 @@ public class ServerWindowController implements HttpHandler {
 							while (iterator.hasNext()) {
 								Client client = iterator.next().getValue();
 								if (client.lastContact < removeOlderThan) {
+									client.removed = true;
 									iterator.remove();
 									Platform.runLater(() -> {
 										if (client.borderPane != null) {
@@ -293,6 +295,9 @@ public class ServerWindowController implements HttpHandler {
 	}
 
 	protected void updateUI(String userName, Client client, boolean imageOrCursorPositionChanged, boolean userStatusChanged) {
+		if (client.removed) {
+			return;
+		}
 		if (imageOrCursorPositionChanged) {
 			WritableImage newFxImage = SwingFXUtils.toFXImage(client.bufferedImage, null);
 			if (client.cursorPos != null) {
@@ -323,54 +328,55 @@ public class ServerWindowController implements HttpHandler {
 			client.fxImage = newFxImage;
 		}
 		Platform.runLater(() -> { // Runs in JavaFX Thread
-			if (client.borderPane == null) {
-				ImageView imageView = new ImageView();
-				imageView.setFitWidth(400);
-				imageView.setFitHeight(250);
-				imageView.setPreserveRatio(true);
-				imageView.setOnMouseClicked(e -> {
-					switchToSingleUserView(client);
-				});
-				client.imageView = imageView;
-				client.borderPane = new BorderPane(imageView);
-				Label label = new Label(client.userName);
-				label.setStyle("-fx-font-size:30px");
-				label.setMaxHeight(10);
-				client.borderPane.setTop(label);
-				int index = 0;
-				int insertIndex = 0;
-				List<Node> children = flowPane.getChildren();
-				for (Node bp : children) {
-					String text = ((Label) ((BorderPane) bp).getTop()).getText();
-					if (text.compareToIgnoreCase(userName) < 0) {
-						insertIndex = index++ + 1;
-					} else {
-						break;
+			if (!client.removed) {
+				if (client.borderPane == null) {
+					ImageView imageView = new ImageView();
+					imageView.setFitWidth(400);
+					imageView.setFitHeight(250);
+					imageView.setPreserveRatio(true);
+					imageView.setOnMouseClicked(e -> {
+						switchToSingleUserView(client);
+					});
+					client.imageView = imageView;
+					client.borderPane = new BorderPane(imageView);
+					Label label = new Label(client.userName);
+					label.setStyle("-fx-font-size:30px");
+					label.setMaxHeight(10);
+					client.borderPane.setTop(label);
+					int index = 0;
+					int insertIndex = 0;
+					List<Node> children = flowPane.getChildren();
+					for (Node bp : children) {
+						String text = ((Label) ((BorderPane) bp).getTop()).getText();
+						if (text.compareToIgnoreCase(userName) < 0) {
+							insertIndex = index++ + 1;
+						} else {
+							break;
+						}
+					}
+					children.add(insertIndex, client.borderPane);
+				}
+				if (imageOrCursorPositionChanged) {
+					if (openedClient == null) {
+						client.imageView.setImage(client.fxImage);
+					} else if (client == openedClient) {
+						if (!frozen) {
+							((ImageView) scrollPane.getContent()).setImage(client.fxImage);
+						}
 					}
 				}
-				children.add(insertIndex, client.borderPane);
-			}
-			if (imageOrCursorPositionChanged) {
-				if (openedClient == null) {
-					client.imageView.setImage(client.fxImage);
-				} else if (client == openedClient) {
-					if (!frozen) {
-						((ImageView) scrollPane.getContent()).setImage(client.fxImage);
+				if (userStatusChanged) {
+					switch (client.userStatus) {
+						case OK :
+							client.borderPane.setStyle("-fx-background-color:green");
+							break;
+						case NOT_OK :
+							client.borderPane.setStyle("-fx-background-color:red");
+							break;
+						default :
+							client.borderPane.setStyle("");
 					}
 				}
-			}
-			if (userStatusChanged) {
-				switch (client.userStatus) {
-					case OK :
-						client.borderPane.setStyle("-fx-background-color:green");
-						break;
-					case NOT_OK :
-						client.borderPane.setStyle("-fx-background-color:red");
-						break;
-					default :
-						client.borderPane.setStyle("");
-				}
-
 			}
 		});
 	}
