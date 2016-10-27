@@ -112,7 +112,7 @@ public class ServerWindowController implements HttpHandler {
 		System.setProperty("sun.net.httpserver.maxReqTime", "20000");
 		System.setProperty("sun.net.httpserver.maxRspTime", "20000");
 
-		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 0);
+		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 200);
 		server.createContext("/DistributedClassroom", this);
 		server.setExecutor(Executors.newCachedThreadPool());
 		server.start();
