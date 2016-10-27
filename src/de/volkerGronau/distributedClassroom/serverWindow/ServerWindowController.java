@@ -5,25 +5,25 @@ import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
-import java.util.concurrent.Executors;
 
 import javax.imageio.ImageIO;
+import javax.servlet.ServletException;
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
-import com.google.common.base.Splitter;
+import org.eclipse.jetty.server.Handler;
+import org.eclipse.jetty.server.Request;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.handler.ContextHandler;
+
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-import com.sun.net.httpserver.HttpServer;
 
 import de.volkerGronau.ApplicationHelper;
 import de.volkerGronau.distributedClassroom.ClientBackend.UserStatus;
@@ -45,7 +45,7 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
-public class ServerWindowController implements HttpHandler {
+public class ServerWindowController implements Handler {
 
 	@FXML
 	protected ScrollPane scrollPane;
@@ -110,13 +110,19 @@ public class ServerWindowController implements HttpHandler {
 		});
 		cursorImageData = loadCursorImageData();
 
-		System.setProperty("sun.net.httpserver.maxReqTime", "20");
-		System.setProperty("sun.net.httpserver.maxRspTime", "20");
+		ContextHandler contextHandler = new ContextHandler();
+		contextHandler.setContextPath("/");
+		contextHandler.setMaxFormContentSize(10 * 1024 * 1024);
+		contextHandler.setHandler(this);
 
-		HttpServer server = HttpServer.create(new InetSocketAddress(settings.getServerPort()), 200);
-		server.createContext("/DistributedClassroom", this);
-		server.setExecutor(Executors.newCachedThreadPool());
+		Server server = new Server(settings.getServerPort());
+
+		server.setHandler(contextHandler);
+		server.setAttribute("maxFormContentSize", -1);
+
 		server.start();
+		//		server.dumpStdErr();
+		//		server.join();
 
 		stage.setOnCloseRequest(e -> {
 			Thread closeThread = new Thread("CloseThread") {
@@ -126,7 +132,7 @@ public class ServerWindowController implements HttpHandler {
 					System.out.println("Stopping HttpServer");
 					closing = true;
 					try {
-						server.stop(2);
+						server.stop();
 					} catch (Exception e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -198,126 +204,95 @@ public class ServerWindowController implements HttpHandler {
 	}
 
 	@Override
-	public void handle(HttpExchange httpExchange) throws IOException {
-		try {
-			if (closing) {
-				httpExchange.close();
-				return;
+	public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+		if (closing) {
+			throw new ServletException("Killing client because closing.");
+		}
+
+		System.out.println("Request: " + baseRequest.getQueryString());
+
+		String userName = request.getParameter("userName");//URLDecoder.decode(parameters.get("userName"), "UTF-8");
+
+		Client client;
+		synchronized (clientCache) {
+			client = clientCache.get(userName);
+			if (client == null) {
+				client = new Client();
+				client.userName = userName;
+				clientCache.put(userName, client);
+			}
+		}
+
+		//		String requestCountStr = request.getParameter("requestCount");
+		//		if (requestCountStr == null) {
+		//			throw new ServletException("Killing client because requestCount missing.");
+		//		}
+		//
+		//		int requestCount = Integer.parseInt(requestCountStr);
+		//		if (requestCount > 0 && client.requestCount > requestCount) {
+		//			throw new ServletException("Killing client because requestCount to small.");
+		//		}
+
+		//		client.requestCount = requestCount;
+		client.lastContact = System.currentTimeMillis();
+
+		boolean imageOrCursorPositionChanged = false;
+		if (request.getParameter("cursorX") != null) {
+			imageOrCursorPositionChanged = true;
+			client.cursorPos = new Point(Integer.parseInt(request.getParameter("cursorX")), Integer.parseInt(request.getParameter("cursorY")));
+		}
+
+		if (request.getParameter("imageIsUpdate") != null) {
+			imageOrCursorPositionChanged = true;
+
+			BufferedImage transferedImage = ImageIO.read(request.getInputStream());
+			if (transferedImage == null) {
+				throw new ServletException("Image is null");
 			}
 
-			String result = "OK";
-			String query = httpExchange.getRequestURI().getQuery();
-
-			System.out.println(query);
-
-			Map<String, String> parameters = Maps.newHashMap();
-			for (String param : Splitter.on("&").split(query)) {
-				int index = param.indexOf('=');
-				if (index != -1) {
-					parameters.put(param.substring(0, index), param.substring(index + 1));
-				}
-			}
-
-			String userName = URLDecoder.decode(parameters.get("userName"), "UTF-8");
-
-			Client client;
-			synchronized (clientCache) {
-				client = clientCache.get(userName);
-				if (client == null) {
-					client = new Client();
-					client.userName = userName;
-					clientCache.put(userName, client);
-				}
-			}
-
-			String requestCountStr = parameters.get("requestCount");
-			if (requestCountStr == null) {
-				httpExchange.close();
-				return;
-			}
-
-			int requestCount = Integer.parseInt(requestCountStr);
-			if (requestCount > 0 && client.requestCount > requestCount) {
-				httpExchange.close();
-				return;
-			}
-
-			client.requestCount = requestCount;
-			client.lastContact = System.currentTimeMillis();
-
-			boolean imageOrCursorPositionChanged = false;
-			if (parameters.containsKey("cursorX")) {
-				imageOrCursorPositionChanged = true;
-				client.cursorPos = new Point(Integer.parseInt(parameters.get("cursorX")), Integer.parseInt(parameters.get("cursorY")));
-			}
-
-			if (parameters.containsKey("imageIsUpdate")) {
-				imageOrCursorPositionChanged = true;
-				//			System.out.println(client.userName + " starting read");
-
-				//			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-				//			int nRead;
-				//			byte[] data = new byte[16384];
-				//			InputStream is = httpExchange.getRequestBody();
-				//			while ((nRead = is.read(data, 0, data.length)) != -1) {
-				//				buffer.write(data, 0, nRead);
-				//			}
-
-				BufferedImage transferedImage = ImageIO.read(httpExchange.getRequestBody());
-				//			System.out.println(client.userName + " finished read");
-
-				if (client.bufferedImage != null) {
-					Graphics g = client.bufferedImage.getGraphics();
-					g.drawImage(transferedImage, 0, 0, null);
-					g.dispose();
+			if (client.bufferedImage != null) {
+				Graphics g = client.bufferedImage.getGraphics();
+				g.drawImage(transferedImage, 0, 0, null);
+				g.dispose();
+			} else {
+				if (Boolean.parseBoolean(request.getParameter("imageIsUpdate"))) { // we got an update but we have nothing to update
+					throw new ServletException("NOK, got an update-image but have no base");
 				} else {
-					if (Boolean.parseBoolean(parameters.get("imageIsUpdate"))) { // we got an update but we have nothing to update
-						result = "NOK, got an update-image but have no base";
-					} else {
-						client.bufferedImage = transferedImage;
-					}
+					client.bufferedImage = transferedImage;
 				}
 			}
-
-			boolean userStatusChanged = false;
-			if (parameters.containsKey("userStatus")) {
-				UserStatus userStatus = UserStatus.valueOf(parameters.get("userStatus"));
-				if (!userStatus.equals(client.userStatus)) {
-					client.userStatus = userStatus;
-					userStatusChanged = true;
-				}
-			}
-
-			//		System.out.println("result:" + result);
-			if ("OK".equals(result)) {
-				updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
-			}
-
-			boolean thisUserOpened = client == openedClient;
-			StringBuilder response = new StringBuilder(result).append('\n').append(thisUserOpened && isControlling).append('\n');
-			response.append(thisUserOpened ? "0" : "5000").append('\n'); // if opened user update the picture fast, otherwise slowly
-			response.append(lastUserStatusReset).append('\n');
-			synchronized (client.commands) {
-				for (String line : client.commands) {
-					response.append(line);
-				}
-				client.commands.clear();
-			}
-
-			httpExchange.sendResponseHeaders(200, response.length());
-			OutputStream os = httpExchange.getResponseBody();
-			os.write(response.toString().getBytes(StandardCharsets.UTF_8));
-			os.close();
-		} catch (Exception e) {
-			e.printStackTrace();
-			httpExchange.close();
 		}
+
+		boolean userStatusChanged = false;
+		if (request.getParameter("userStatus") != null) {
+			UserStatus userStatus = UserStatus.valueOf(request.getParameter("userStatus"));
+			if (!userStatus.equals(client.userStatus)) {
+				client.userStatus = userStatus;
+				userStatusChanged = true;
+			}
+		}
+
+		if (!client.removed && client.bufferedImage != null) {
+			updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
+		}
+
+		boolean thisUserOpened = client == openedClient;
+		ServletOutputStream os = response.getOutputStream();
+		os.println(String.valueOf(thisUserOpened && isControlling));
+		os.println(thisUserOpened ? "0" : "5000"); // if opened user update the picture fast, otherwise slowly
+		os.println(String.valueOf(lastUserStatusReset));
+
+		synchronized (client.commands) {
+			for (String line : client.commands) {
+				os.print(line);
+			}
+			client.commands.clear();
+		}
+
+		os.flush();
+		baseRequest.setHandled(true);
 	}
-
 	protected void updateUI(String userName, Client client, boolean imageOrCursorPositionChanged, boolean userStatusChanged) {
-		if (client.removed) {
-			return;
-		}
 		if (imageOrCursorPositionChanged) {
 			WritableImage newFxImage = SwingFXUtils.toFXImage(client.bufferedImage, null);
 			if (client.cursorPos != null) {
@@ -495,6 +470,84 @@ public class ServerWindowController implements HttpHandler {
 		openedClient = null;
 		isControlling = false;
 		updateTitle();
+	}
+
+	@Override
+	public void addLifeCycleListener(Listener arg0) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public boolean isFailed() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public boolean isRunning() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public boolean isStarted() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public boolean isStarting() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public boolean isStopped() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public boolean isStopping() {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public void removeLifeCycleListener(Listener arg0) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void start() throws Exception {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void stop() throws Exception {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void destroy() {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public Server getServer() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public void setServer(Server arg0) {
+		// TODO Auto-generated method stub
+
 	}
 
 }

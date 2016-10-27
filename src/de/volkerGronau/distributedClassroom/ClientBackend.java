@@ -7,20 +7,31 @@ import java.awt.event.InputEvent;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.Proxy;
-import java.net.URL;
-import java.net.URLConnection;
+import java.net.Proxy.Type;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 import javax.imageio.ImageIO;
 
-import org.apache.commons.lang3.mutable.MutableBoolean;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpHost;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.entity.InputStreamEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.util.EntityUtils;
 
 import de.volkerGronau.distributedClassroom.ProxyHelper.ProxyType;
 import javafx.application.Platform;
@@ -41,7 +52,6 @@ public class ClientBackend {
 	protected Screen screen;
 	protected Rectangle screenBounds;
 	protected String urlBaseString;
-	protected Proxy proxy;
 	protected long takeNextPictureAt = 0;
 	protected java.awt.Point cursorPosition;
 	protected java.awt.Point oldCursorPosition;
@@ -54,7 +64,11 @@ public class ClientBackend {
 	protected long oldLastUserStatusReset;
 	protected int hotPixels;
 	protected int hotPixelHitCount;
-	protected int requestCount = 0;
+	//	protected int requestCount = 0;
+	protected CloseableHttpClient httpClient;
+	protected HttpClientContext httpClientContext;
+	protected boolean useGIF;
+	protected AnimatedGIFWriter animatedGIFWriter = new AnimatedGIFWriter(false);
 
 	public ClientBackend(Screen screen, String name, String serverAddress) throws Exception {
 		super();
@@ -69,8 +83,8 @@ public class ClientBackend {
 				try {
 					while (!isInterrupted()) {
 						long startTime = System.currentTimeMillis();
-						if (proxy == null) {
-							proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
+						if (httpClient == null) {
+							createHttpClient();
 						}
 						updateData();
 						//						if (!isInputControlledByServer) {
@@ -90,6 +104,31 @@ public class ClientBackend {
 		thread.start();
 	}
 
+	protected void createHttpClient() {
+		HttpHost httpHost = null;
+		Proxy proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
+		httpClientContext = null;
+		if (Type.HTTP.equals(proxy.type())) {
+			String addr = proxy.address().toString();
+			int index = addr.indexOf(':');
+			if (index != -1) {
+				httpHost = new HttpHost(addr.substring(0, index), Integer.parseInt(addr.substring(index + 1)), "http");
+			} else {
+				httpHost = new HttpHost(addr);
+			}
+		} else if (Type.SOCKS.equals(proxy.type())) {
+			InetSocketAddress socksaddr = new InetSocketAddress("mysockshost", 1234);
+			httpClientContext = HttpClientContext.create();
+			httpClientContext.setAttribute("socks.address", socksaddr);
+		}
+		System.out.println("Using Proxy: " + httpHost);
+		RequestConfig config = RequestConfig.custom().setConnectTimeout(20000).setProxy(httpHost).setSocketTimeout(20000).build();
+
+		HttpClientBuilder builder = HttpClientBuilder.create();
+		builder.setDefaultRequestConfig(config);
+		httpClient = builder.build();
+	}
+
 	public void updateData() {
 		try {
 			long currentTimeMillis = System.currentTimeMillis();
@@ -103,7 +142,7 @@ public class ClientBackend {
 				if (oldImage == null) {
 					imageToSendToServer = newBufferedImage;
 					oldImage = newBufferedImage;
-					changedPixels = 0;
+					changedPixels = screenBounds.width * screenBounds.height;
 					contactServer();
 				} else {
 					changedPixels = getChangedPixels(oldImage, newBufferedImage, differenceImage);
@@ -154,16 +193,16 @@ public class ClientBackend {
 		oldImage = null;
 		oldCursorPosition = null;
 		oldUserStatus = null;
-		proxy = null; // Reset detected proxy on communication error
-		requestCount = 0;
+		//		requestCount = 0;
+		httpClient = null;
 	}
 
 	protected void contactServer() {
 		nextForcedContact = 0;
 	}
 
-	protected URL getURL() throws MalformedURLException {
-		StringBuilder result = new StringBuilder(urlBaseString).append("&requestCount=").append(requestCount++);
+	protected String getURL() throws MalformedURLException {
+		StringBuilder result = new StringBuilder(urlBaseString);//.append("&requestCount=").append(requestCount++);
 		if (!userStatus.equals(oldUserStatus)) {
 			oldUserStatus = userStatus;
 			result.append("&userStatus=").append(userStatus);
@@ -178,65 +217,57 @@ public class ClientBackend {
 			result.append("&cursorY=").append(oldCursorPosition.y - screenBounds.y);
 		}
 
-		if (!Proxy.NO_PROXY.equals(proxy)) {
-			result.append("&r=").append(Math.random()); // Lots of proxies cache anyway, we trick it
-		}
-		return new URL(result.toString());
+		//		if (!Proxy.NO_PROXY.equals(proxy)) {
+		//			result.append("&r=").append(Math.random()); // Lots of proxies cache anyway, we trick them
+		//		}
+		return result.toString();
 	}
 
 	protected void sendDataToServer() throws Exception {
 
-		URLConnection connection = getURL().openConnection(proxy);
-		connection.setUseCaches(false);
-		connection.setConnectTimeout(20000);
-		connection.setReadTimeout(20000);
+		HttpUriRequest httpUriRequest;
+		if (imageToSendToServer == null) {
+			httpUriRequest = new HttpGet(getURL());
+		} else {
+			httpUriRequest = new HttpPost(getURL());
+			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
-		MutableBoolean result = new MutableBoolean(false);
-		Thread sendThread = new Thread() {
-
-			@Override
-			public void run() {
-				try {
-					if (imageToSendToServer != null) {
-						connection.setDoOutput(true);
-						((HttpURLConnection) connection).setRequestMethod("POST");
-						try (OutputStream os = connection.getOutputStream()) {
-							ImageIO.write(imageToSendToServer, "PNG", os);
-							os.flush();
-						}
-					}
-
-					if (((HttpURLConnection) connection).getResponseCode() == 200) {
-						try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-							try {
-								result.setValue("OK".equals(reader.readLine()));
-								if (result.isTrue()) {
-									processServerResponse(reader);
-								}
-							} catch (Exception e) {
-								while (reader.read() != -1) {
-								}
-								((HttpURLConnection) connection).disconnect();
-							}
-						}
-					}
-				} catch (Exception e) {
-					e.printStackTrace();
-					result.setFalse();
-				}
+			if (useGIF) {
+				animatedGIFWriter.write(imageToSendToServer, bos);
+			} else {
+				ImageIO.write(imageToSendToServer, "PNG", bos);
 			}
 
-		};
-		sendThread.setDaemon(false);
-		sendThread.start();
-		sendThread.join(20000);
-		if (sendThread.isAlive()) {
-			sendThread.interrupt();
-			throw new Exception("Timeout occured.");
+			System.out.println("Image size is: " + bos.size());
+			((HttpPost) httpUriRequest).setEntity(new InputStreamEntity(new ByteArrayInputStream(bos.toByteArray())));
+		}
+		long start = System.currentTimeMillis();
+		CloseableHttpResponse response = httpClient.execute(httpUriRequest, httpClientContext);
+		long took = System.currentTimeMillis() - start;
+		System.out.println("Request took: " + took);
+
+		if (imageToSendToServer != null && took > 3000) {
+			useGIF = true;
 		}
 
-		if (result.isFalse()) {
-			throw new Exception("Did not get expected answer from server.");
+		HttpEntity entity = response.getEntity();
+		try {
+			if (response.getStatusLine().getStatusCode() != 200) {
+				throw new Exception("Got status line: " + response.getStatusLine());
+			}
+
+			try (BufferedReader reader = new BufferedReader(new InputStreamReader(entity.getContent(), StandardCharsets.UTF_8))) {
+				processServerResponse(reader);
+			}
+		} finally {
+			try {
+				EntityUtils.consume(entity);
+			} catch (Exception e) {
+			}
+			try {
+				response.close();
+			} catch (Exception e) {
+			}
 		}
 
 	}
