@@ -40,15 +40,10 @@
 	<classpathentry kind="lib" path="lib/Jetty/jetty-webapp-9.3.13.v20161014.jar"/>
 	<classpathentry kind="lib" path="lib/Jetty/jetty-xml-9.3.13.v20161014.jar"/>
 	<classpathentry kind="lib" path="lib/Jetty/servlet-api-3.1.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/commons-codec-1.9.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/commons-logging-1.2.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/fluent-hc-4.5.2.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/httpclient-4.5.2.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/httpclient-cache-4.5.2.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/httpclient-win-4.5.2.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/httpcore-4.4.4.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/httpmime-4.5.2.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/jna-4.1.0.jar"/>
-	<classpathentry kind="lib" path="lib/Apache HTTP Client/jna-platform-4.1.0.jar"/>
+	<classpathentry kind="lib" path="lib/Netty/async-http-client-2.1.0-alpha1.jar"/>
+	<classpathentry kind="lib" path="lib/Netty/netty-all-4.1.6.Final.jar"/>
+	<classpathentry kind="lib" path="lib/log4j2/log4j-slf4j-impl-2.7.jar"/>
+	<classpathentry kind="lib" path="lib/Netty/reactive-streams-1.0.0.jar"/>
+	<classpathentry kind="lib" path="lib/slf4j-api-1.7.21.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

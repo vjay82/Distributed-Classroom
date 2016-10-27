@@ -6,33 +6,23 @@ import java.awt.Robot;
 import java.awt.event.InputEvent;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.InetSocketAddress;
+import java.io.ObjectInputStream;
 import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.Proxy.Type;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
 
 import javax.imageio.ImageIO;
 
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpHost;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.protocol.HttpClientContext;
-import org.apache.http.entity.InputStreamEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.util.EntityUtils;
+import org.asynchttpclient.AsyncHttpClient;
+import org.asynchttpclient.AsyncHttpClientConfig;
+import org.asynchttpclient.BoundRequestBuilder;
+import org.asynchttpclient.DefaultAsyncHttpClient;
+import org.asynchttpclient.DefaultAsyncHttpClientConfig.Builder;
+import org.asynchttpclient.Response;
+import org.asynchttpclient.proxy.ProxyServer;
 
 import de.volkerGronau.distributedClassroom.ProxyHelper.ProxyType;
 import javafx.application.Platform;
@@ -65,43 +55,44 @@ public class ClientBackend {
 	protected long oldLastUserStatusReset;
 	protected int hotPixels;
 	protected int hotPixelHitCount;
-	//	protected int requestCount = 0;
-	protected CloseableHttpClient httpClient;
-	protected HttpClientContext httpClientContext;
+	protected int requestCount = 0;
+	protected AsyncHttpClient client;
 	protected boolean useGIF;
 	protected AnimatedGIFWriter animatedGIFWriter = new AnimatedGIFWriter(false);
 	protected Thread interactionThread;
 	protected volatile long lastCycle;
+	protected String userName;
 
-	public ClientBackend(Screen screen, String name, String serverAddress) throws Exception {
+	public ClientBackend(Screen screen, String userName, String serverAddress) throws Exception {
 		super();
 
+		this.userName = userName;
 		this.screen = screen;
-		this.urlBaseString = serverAddress + "?userName=" + URLEncoder.encode(name, "UTF-8") + "&version=" + DistributedClassroom.VERSION;
+		this.urlBaseString = serverAddress;//+ "?userName=" + URLEncoder.encode(name, "UTF-8") + "&version=" + DistributedClassroom.VERSION;
 		this.screenBounds = screen.getBounds();
 
 		createInteractionThread();
 
-		Thread watcherThread = new Thread("Watchdog Thread") {
-			@Override
-			public void run() {
-				try {
-					while (!isInterrupted()) {
-						Thread.sleep(1000);
-						if (lastCycle < System.currentTimeMillis() - 60000) {
-							interactionThread.interrupt();
-							System.out.println("Watchdog - resetting.");
-							resetServerConnection();
-							createInteractionThread();
-						}
-					}
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-		};
-		watcherThread.setDaemon(false);
-		watcherThread.start();
+		//		Thread watcherThread = new Thread("Watchdog Thread") {
+		//			@Override
+		//			public void run() {
+		//				try {
+		//					while (!isInterrupted()) {
+		//						Thread.sleep(1000);
+		//						if (lastCycle < System.currentTimeMillis() - 60000) {
+		//							interactionThread.interrupt();
+		//							System.out.println("Watchdog - resetting.");
+		//							resetServerConnection();
+		//							createInteractionThread();
+		//						}
+		//					}
+		//				} catch (Exception e) {
+		//					e.printStackTrace();
+		//				}
+		//			}
+		//		};
+		//		watcherThread.setDaemon(false);
+		//		watcherThread.start();
 	}
 
 	protected void createInteractionThread() {
@@ -112,7 +103,7 @@ public class ClientBackend {
 				try {
 					while (!isInterrupted()) {
 						long startTime = System.currentTimeMillis();
-						if (httpClient == null) {
+						if (client == null) {
 							createHttpClient();
 							lastCycle = System.currentTimeMillis();
 						}
@@ -135,39 +126,19 @@ public class ClientBackend {
 	}
 
 	protected void createHttpClient() {
-		HttpHost httpHost = null;
-		httpClientContext = null;
-
 		Proxy proxy = ProxyHelper.getProxy(urlBaseString, ProxyType.os);
 		System.out.println("Using Proxy: " + proxy);
-
+		ProxyServer proxyServer = null;
 		if (Type.HTTP.equals(proxy.type())) {
 			String addr = proxy.address().toString();
 			int index = addr.indexOf(':');
 			if (index != -1) {
-				httpHost = new HttpHost(addr.substring(0, index), Integer.parseInt(addr.substring(index + 1)), "http");
-			} else {
-				httpHost = new HttpHost(addr);
-			}
-		} else if (Type.SOCKS.equals(proxy.type())) {
-			String addr = proxy.address().toString();
-			int index = addr.indexOf(':');
-			if (index != -1) {
-				InetSocketAddress socksaddr = new InetSocketAddress(addr.substring(0, index), Integer.parseInt(addr.substring(index + 1)));
-				httpClientContext = HttpClientContext.create();
-				httpClientContext.setAttribute("socks.address", socksaddr);
-			} else {
-				InetSocketAddress socksaddr = new InetSocketAddress(addr, 1080);
-				httpClientContext = HttpClientContext.create();
-				httpClientContext.setAttribute("socks.address", socksaddr);
+				proxyServer = (new ProxyServer.Builder(addr.substring(0, index), Integer.parseInt(addr.substring(index + 1)))).build();
 			}
 		}
 
-		RequestConfig config = RequestConfig.custom().setConnectTimeout(20000).setProxy(httpHost).setSocketTimeout(20000).setConnectionRequestTimeout(20000).setContentCompressionEnabled(false).build();
-		HttpClientBuilder builder = HttpClientBuilder.create();
-		builder.setDefaultRequestConfig(config);
-		builder.setConnectionTimeToLive(20, TimeUnit.SECONDS);
-		httpClient = builder.disableAutomaticRetries().disableContentCompression().build();
+		AsyncHttpClientConfig config = (new Builder()).setMaxConnections(1).setMaxConnectionsPerHost(1).setConnectTimeout(5000).setConnectionTtl(30000).setProxyServer(proxyServer).setReadTimeout(30000).setMaxRequestRetry(1).setKeepAlive(false).build();
+		client = new DefaultAsyncHttpClient(config);
 	}
 
 	public void updateData() {
@@ -234,8 +205,13 @@ public class ClientBackend {
 		oldImage = null;
 		oldCursorPosition = null;
 		oldUserStatus = null;
-		//		requestCount = 0;
-		httpClient = null;
+		if (client != null) {
+			try {
+				client.close();
+			} catch (IOException e) {
+			}
+		}
+		client = null;
 	}
 
 	protected void contactServer() {
@@ -243,34 +219,52 @@ public class ClientBackend {
 	}
 
 	protected String getURL() throws MalformedURLException {
-		StringBuilder result = new StringBuilder(urlBaseString);//.append("&requestCount=").append(requestCount++);
+		//		StringBuilder result = new StringBuilder(urlBaseString);//.append("&requestCount=").append(requestCount++);
+		//		if (!userStatus.equals(oldUserStatus)) {
+		//			oldUserStatus = userStatus;
+		//			result.append("&userStatus=").append(userStatus);
+		//		}
+		//		if (imageToSendToServer != null) {
+		//			result.append("&imageIsUpdate=").append(imageToSendToServer == differenceImage);
+		//			//			result.append("&changedPixels=").append(changedPixels);
+		//		}
+		//		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screenBounds.contains(cursorPosition)) {
+		//			oldCursorPosition = cursorPosition;
+		//			result.append("&cursorX=").append(oldCursorPosition.x - screenBounds.x);
+		//			result.append("&cursorY=").append(oldCursorPosition.y - screenBounds.y);
+		//		}
+		//		return result.toString();
+		return urlBaseString;
+	}
+
+	protected void addParameters(BoundRequestBuilder b) {
+		b.addHeader("userName", userName);
 		if (!userStatus.equals(oldUserStatus)) {
 			oldUserStatus = userStatus;
-			result.append("&userStatus=").append(userStatus);
+			b.addHeader("userStatus", String.valueOf(userStatus));
 		}
 		if (imageToSendToServer != null) {
-			result.append("&imageIsUpdate=").append(imageToSendToServer == differenceImage);
-			//			result.append("&changedPixels=").append(changedPixels);
+			b.addHeader("imageIsUpdate", String.valueOf(imageToSendToServer == differenceImage));
 		}
 		if (cursorPosition != null && !cursorPosition.equals(oldCursorPosition) && screenBounds.contains(cursorPosition)) {
 			oldCursorPosition = cursorPosition;
-			result.append("&cursorX=").append(oldCursorPosition.x - screenBounds.x);
-			result.append("&cursorY=").append(oldCursorPosition.y - screenBounds.y);
+			b.addHeader("cursorX", String.valueOf(oldCursorPosition.x - screenBounds.x));
+			b.addHeader("cursorY", String.valueOf(oldCursorPosition.y - screenBounds.y));
 		}
 
-		//		if (!Proxy.NO_PROXY.equals(proxy)) {
-		//			result.append("&r=").append(Math.random()); // Lots of proxies cache anyway, we trick them
-		//		}
-		return result.toString();
+		b.addHeader("requestCount", String.valueOf(++requestCount));
 	}
 
 	protected void sendDataToServer() throws Exception {
-		System.out.println("sending...");
-		HttpUriRequest httpUriRequest;
+		System.out.println("preparing");
+		Future<Response> f;
 		if (imageToSendToServer == null) {
-			httpUriRequest = new HttpGet(getURL());
+			System.out.println("using GET");
+			BoundRequestBuilder b = client.preparePost(getURL()).setRequestTimeout(30000);
+			addParameters(b);
+			f = b.execute();
 		} else {
-			httpUriRequest = new HttpPost(getURL());
+			System.out.println("using POST");
 			ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
 			if (useGIF) {
@@ -278,52 +272,41 @@ public class ClientBackend {
 			} else {
 				ImageIO.write(imageToSendToServer, "PNG", bos);
 			}
-
-			System.out.println("Image size is: " + bos.size());
-			((HttpPost) httpUriRequest).setEntity(new InputStreamEntity(new ByteArrayInputStream(bos.toByteArray()), bos.size()));
+			BoundRequestBuilder b = client.preparePost(getURL()).setRequestTimeout(30000).setBody(bos.toByteArray());
+			addParameters(b);
+			f = b.execute();
 		}
+		System.out.println("sending " + requestCount);
+
 		long start = System.currentTimeMillis();
-		CloseableHttpResponse response = httpClient.execute(httpUriRequest, httpClientContext);
+		Response response = f.get();
 		long took = System.currentTimeMillis() - start;
 		System.out.println("Done, request took: " + took);
-
 		if (imageToSendToServer != null && took > 3000) {
 			useGIF = true;
 		}
 
-		HttpEntity entity = response.getEntity();
-		try {
-			if (response.getStatusLine().getStatusCode() != 200) {
-				throw new Exception("Got status line: " + response.getStatusLine());
-			}
-
-			try (BufferedReader reader = new BufferedReader(new InputStreamReader(entity.getContent(), StandardCharsets.UTF_8))) {
-				processServerResponse(reader);
-			}
-		} finally {
-			try {
-				EntityUtils.consume(entity);
-			} catch (Exception e) {
-			}
-			try {
-				response.close();
-			} catch (Exception e) {
-			}
+		if (response.getStatusCode() != 200) {
+			response.getResponseBody();
+			throw new Exception("Got status line: " + response.getStatusText());
 		}
 
+		try (ObjectInputStream ois = new ObjectInputStream(response.getResponseBodyAsStream());) {
+			processServerResponse(ois);
+		}
 	}
 
-	protected String readNextToken(BufferedReader reader) throws IOException {
-		return reader.readLine();
+	protected String readNextToken(ObjectInputStream ois) throws IOException {
+		return ois.readLine();
 	}
 
-	protected void processServerResponse(BufferedReader reader) throws NumberFormatException, IOException {
-		isInputControlledByServer = Boolean.parseBoolean(reader.readLine());
-		int pictureInterval = Integer.parseInt(reader.readLine());
+	protected void processServerResponse(ObjectInputStream ois) throws NumberFormatException, IOException {
+		isInputControlledByServer = ois.readBoolean();
+		int pictureInterval = ois.readInt();
 		if (imageToSendToServer != null) {
 			takeNextPictureAt = System.currentTimeMillis() + pictureInterval;
 		}
-		long lastUserStatusReset = Long.parseLong(reader.readLine());
+		long lastUserStatusReset = ois.readLong();
 		if (lastUserStatusReset != oldLastUserStatusReset) {
 			oldLastUserStatusReset = lastUserStatusReset;
 			if (onResetUserStatus != null) {
@@ -332,27 +315,28 @@ public class ClientBackend {
 		}
 
 		//TODO: empty the connection stream first and then process the event -> much cleaner
-		String command;
-		while ((command = readNextToken(reader)) != null) {
+		int count = ois.readInt();
+		for (int index = 0; index < count; index++) {
+			String command = readNextToken(ois);
 			switch (command) {
 				case "kp" :
-					robot.keyPress(getCodeForKey(readNextToken(reader)));
+					robot.keyPress(getCodeForKey(readNextToken(ois)));
 					break;
 				case "kr" :
-					robot.keyRelease(getCodeForKey(readNextToken(reader)));
+					robot.keyRelease(getCodeForKey(readNextToken(ois)));
 					break;
 				case "mm" :
-					robot.mouseMove(screenBounds.x + Integer.parseInt(readNextToken(reader)), screenBounds.y + Integer.parseInt(readNextToken(reader)));
+					robot.mouseMove(screenBounds.x + Integer.parseInt(readNextToken(ois)), screenBounds.y + Integer.parseInt(readNextToken(ois)));
 					break;
 				case "mp" :
-					robot.mousePress(InputEvent.getMaskForButton(Integer.parseInt(readNextToken(reader))));
+					robot.mousePress(InputEvent.getMaskForButton(Integer.parseInt(readNextToken(ois))));
 					break;
 				case "mr" :
-					robot.mouseRelease(InputEvent.getMaskForButton(Integer.parseInt(readNextToken(reader))));
+					robot.mouseRelease(InputEvent.getMaskForButton(Integer.parseInt(readNextToken(ois))));
 					break;
 			}
-
 		}
+
 	}
 
 	protected int getCodeForKey(String key) {

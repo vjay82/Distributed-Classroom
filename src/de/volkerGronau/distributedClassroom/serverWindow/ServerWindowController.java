@@ -5,6 +5,8 @@ import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectOutputStream;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +22,9 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.handler.ContextHandler;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -115,11 +119,21 @@ public class ServerWindowController implements Handler {
 		contextHandler.setMaxFormContentSize(10 * 1024 * 1024);
 		contextHandler.setHandler(this);
 
-		Server server = new Server(settings.getServerPort());
+		Server server = new Server(new QueuedThreadPool(2000, 10));
+
+		// HTTP connector
+		ServerConnector http = new ServerConnector(server);
+		http.setPort(settings.getServerPort());
+		http.setIdleTimeout(30000);
+		http.setAcceptQueueSize(2000);
+		http.setSoLingerTime(5000);
+
+		// Set the connector
+		server.addConnector(http);
 
 		server.setHandler(contextHandler);
 		server.setAttribute("maxFormContentSize", -1);
-
+		server.dumpStdErr();
 		server.start();
 
 		stage.setOnCloseRequest(e -> {
@@ -202,13 +216,18 @@ public class ServerWindowController implements Handler {
 
 	@Override
 	public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
-		try {
-			System.out.println("Request: " + baseRequest.getQueryString());
+
+		try (InputStream inputStream = request.getInputStream(); ServletOutputStream outputStream = response.getOutputStream();) {
 			if (closing) {
 				throw new ServletException("Killing client because closing.");
 			}
 
-			String userName = request.getParameter("userName");//URLDecoder.decode(parameters.get("userName"), "UTF-8");
+			String userName = request.getHeader("userName");
+			if (null == userName) {
+				throw new ServletException("Killing client because no username.");
+			}
+
+			System.out.println("GOT " + userName + " RQ: " + request.getHeader("requestCount"));
 
 			Client client;
 			synchronized (clientCache) {
@@ -220,29 +239,18 @@ public class ServerWindowController implements Handler {
 				}
 			}
 
-			//		String requestCountStr = request.getParameter("requestCount");
-			//		if (requestCountStr == null) {
-			//			throw new ServletException("Killing client because requestCount missing.");
-			//		}
-			//
-			//		int requestCount = Integer.parseInt(requestCountStr);
-			//		if (requestCount > 0 && client.requestCount > requestCount) {
-			//			throw new ServletException("Killing client because requestCount to small.");
-			//		}
-
-			//		client.requestCount = requestCount;
 			client.lastContact = System.currentTimeMillis();
 
 			boolean imageOrCursorPositionChanged = false;
-			if (request.getParameter("cursorX") != null) {
+			if (request.getHeader("cursorX") != null) {
 				imageOrCursorPositionChanged = true;
-				client.cursorPos = new Point(Integer.parseInt(request.getParameter("cursorX")), Integer.parseInt(request.getParameter("cursorY")));
+				client.cursorPos = new Point(Integer.parseInt(request.getHeader("cursorX")), Integer.parseInt(request.getHeader("cursorY")));
 			}
 
-			if (request.getParameter("imageIsUpdate") != null) {
+			if (request.getHeader("imageIsUpdate") != null) {
 				imageOrCursorPositionChanged = true;
 
-				BufferedImage transferedImage = ImageIO.read(request.getInputStream());
+				BufferedImage transferedImage = ImageIO.read(inputStream);
 				if (transferedImage == null) {
 					throw new ServletException("Image is null");
 				}
@@ -252,7 +260,7 @@ public class ServerWindowController implements Handler {
 					g.drawImage(transferedImage, 0, 0, null);
 					g.dispose();
 				} else {
-					if (Boolean.parseBoolean(request.getParameter("imageIsUpdate"))) { // we got an update but we have nothing to update
+					if (Boolean.parseBoolean(request.getHeader("imageIsUpdate"))) { // we got an update but we have nothing to update
 						throw new ServletException("NOK, got an update-image but have no base");
 					} else {
 						client.bufferedImage = transferedImage;
@@ -261,8 +269,8 @@ public class ServerWindowController implements Handler {
 			}
 
 			boolean userStatusChanged = false;
-			if (request.getParameter("userStatus") != null) {
-				UserStatus userStatus = UserStatus.valueOf(request.getParameter("userStatus"));
+			if (request.getHeader("userStatus") != null) {
+				UserStatus userStatus = UserStatus.valueOf(request.getHeader("userStatus"));
 				if (!userStatus.equals(client.userStatus)) {
 					client.userStatus = userStatus;
 					userStatusChanged = true;
@@ -273,27 +281,32 @@ public class ServerWindowController implements Handler {
 				updateUI(userName, client, imageOrCursorPositionChanged, userStatusChanged);
 			}
 
+			while (inputStream.available() > 0) {
+				inputStream.read();
+			}
+
+			response.setContentType("text/html; charset=utf-8");
+			response.setStatus(HttpServletResponse.SC_OK);
+
+			ObjectOutputStream oos = new ObjectOutputStream(outputStream);
 			boolean thisUserOpened = client == openedClient;
-			ServletOutputStream os = response.getOutputStream();
-			os.println(String.valueOf(thisUserOpened && isControlling));
-			os.println(thisUserOpened ? "0" : "5000"); // if opened user update the picture fast, otherwise slowly
-			os.println(String.valueOf(lastUserStatusReset));
+			oos.writeBoolean(thisUserOpened && isControlling);
+			oos.writeInt(thisUserOpened ? 0 : 5000); // if opened user update the picture fast, otherwise slowly
+			oos.writeLong(lastUserStatusReset);
 
 			synchronized (client.commands) {
+				oos.writeInt(client.commands.size());
 				for (String line : client.commands) {
-					os.print(line);
+					oos.writeChars(line);
 				}
 				client.commands.clear();
 			}
-
-			os.flush();
+			oos.flush();
+			System.out.println("Response sent to " + client.userName);
 			baseRequest.setHandled(true);
+
 		} catch (Exception e) {
 			e.printStackTrace();
-			try {
-				response.getOutputStream().close();
-			} catch (Exception e2) {
-			}
 			throw e;
 		}
 	}
