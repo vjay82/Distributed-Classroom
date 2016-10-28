@@ -248,6 +248,18 @@ public class ServerWindowController {
 				socket = null;
 			});
 		}
+		public void sendAlive() {
+			connectionWorker.execute(() -> {
+				try {
+					synchronized (networkOutputStream) {
+						networkOutputStream.writeChar('a');
+						networkOutputStream.flush();
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			});
+		}
 	}
 
 	protected Map<String, Client> clientCache = Maps.newHashMap();
@@ -308,7 +320,6 @@ public class ServerWindowController {
 			};
 			closeThread.setDaemon(true);
 			closeThread.start();
-
 		});
 
 		rootPane.setOnMouseMoved(e -> {
@@ -334,7 +345,7 @@ public class ServerWindowController {
 			public void run() {
 				try {
 					while (!isInterrupted()) {
-						Thread.sleep(10000);
+						Thread.sleep(19000);
 						synchronized (clientCache) {
 							long removeOlderThan = System.currentTimeMillis() - 60000;
 							Iterator<Entry<String, Client>> iterator = clientCache.entrySet().iterator();
@@ -348,6 +359,8 @@ public class ServerWindowController {
 											flowPane.getChildren().remove(client.borderPane);
 										}
 									});
+								} else {
+									client.sendAlive();
 								}
 							}
 						}
