@@ -275,28 +275,24 @@ public class ClientBackend {
 
 	protected void controlInputDevices(NetworkInputStream networkInputStream) throws NumberFormatException, IOException {
 		//TODO: empty the connection stream first and then process the event -> much cleaner
-		int count = networkInputStream.readInt();
-		for (int index = 0; index < count; index++) {
-			char command = networkInputStream.readChar();
-			switch (command) {
-				case 'a' :
-					robot.keyPress(getCodeForKey(networkInputStream.readString()));
-					break;
-				case 'b' :
-					robot.keyRelease(getCodeForKey(networkInputStream.readString()));
-					break;
-				case 'c' :
-					robot.mouseMove(screenBounds.x + networkInputStream.readInt(), screenBounds.y + networkInputStream.readInt());
-					break;
-				case 'd' :
-					robot.mousePress(InputEvent.getMaskForButton(networkInputStream.readInt()));
-					break;
-				case 'e' :
-					robot.mouseRelease(InputEvent.getMaskForButton(networkInputStream.readInt()));
-					break;
-			}
+		char command = networkInputStream.readChar();
+		switch (command) {
+			case 'a' :
+				robot.keyPress(getCodeForKey(networkInputStream.readString()));
+				break;
+			case 'b' :
+				robot.keyRelease(getCodeForKey(networkInputStream.readString()));
+				break;
+			case 'c' :
+				robot.mouseMove(screenBounds.x + networkInputStream.readInt(), screenBounds.y + networkInputStream.readInt());
+				break;
+			case 'd' :
+				robot.mousePress(InputEvent.getMaskForButton(networkInputStream.readInt()));
+				break;
+			case 'e' :
+				robot.mouseRelease(InputEvent.getMaskForButton(networkInputStream.readInt()));
+				break;
 		}
-
 	}
 
 	protected int getCodeForKey(String key) {
