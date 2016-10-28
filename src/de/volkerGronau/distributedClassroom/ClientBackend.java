@@ -276,23 +276,32 @@ public class ClientBackend {
 	protected void controlInputDevices(NetworkInputStream networkInputStream) throws NumberFormatException, IOException {
 		//TODO: empty the connection stream first and then process the event -> much cleaner
 		char command = networkInputStream.readChar();
-		switch (command) {
-			case 'a' :
-				robot.keyPress(getCodeForKey(networkInputStream.readString()));
-				break;
-			case 'b' :
-				robot.keyRelease(getCodeForKey(networkInputStream.readString()));
-				break;
-			case 'c' :
-				robot.mouseMove(screenBounds.x + networkInputStream.readInt(), screenBounds.y + networkInputStream.readInt());
-				break;
-			case 'd' :
-				robot.mousePress(InputEvent.getMaskForButton(networkInputStream.readInt()));
-				break;
-			case 'e' :
-				robot.mouseRelease(InputEvent.getMaskForButton(networkInputStream.readInt()));
-				break;
+		try {
+			switch (command) {
+				case 'a' :
+					String pressCode = networkInputStream.readString();
+					System.out.println("Key Pressed: " + pressCode);
+					robot.keyPress(getCodeForKey(pressCode));
+					break;
+				case 'b' :
+					String releaseCode = networkInputStream.readString();
+					System.out.println("Key Released: " + releaseCode);
+					robot.keyRelease(getCodeForKey(releaseCode));
+					break;
+				case 'c' :
+					robot.mouseMove(screenBounds.x + networkInputStream.readInt(), screenBounds.y + networkInputStream.readInt());
+					break;
+				case 'd' :
+					robot.mousePress(InputEvent.getMaskForButton(networkInputStream.readInt()));
+					break;
+				case 'e' :
+					robot.mouseRelease(InputEvent.getMaskForButton(networkInputStream.readInt()));
+					break;
+			}
+		} catch (Exception e) { // For example pressing invalid key code
+			e.printStackTrace();
 		}
+
 	}
 
 	protected int getCodeForKey(String key) {
