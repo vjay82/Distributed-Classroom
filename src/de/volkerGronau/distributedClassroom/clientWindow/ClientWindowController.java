@@ -4,6 +4,7 @@ import java.util.ResourceBundle;
 
 import de.volkerGronau.distributedClassroom.ClientBackend;
 import de.volkerGronau.distributedClassroom.ClientBackend.UserStatus;
+import de.volkerGronau.distributedClassroom.DistributedClassroom;
 import de.volkerGronau.distributedClassroom.Screen;
 import de.volkerGronau.distributedClassroom.settings.Settings;
 import javafx.fxml.FXML;
@@ -22,7 +23,7 @@ public class ClientWindowController {
 	protected boolean eventIsFromUser = true;
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings) throws Exception {
-		stage.setTitle(resources.getString("title"));
+		stage.setTitle(String.format(resources.getString("title"), DistributedClassroom.VERSION));
 		try {
 			stage.setAlwaysOnTop(true);
 		} catch (Throwable t) {

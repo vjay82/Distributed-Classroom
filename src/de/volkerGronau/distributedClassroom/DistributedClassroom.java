@@ -20,6 +20,7 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
@@ -100,6 +101,10 @@ public class DistributedClassroom extends Application {
 
 			} catch (Exception e) {
 				e.printStackTrace();
+				Alert alert = new Alert(Alert.AlertType.ERROR, e.getMessage());
+				alert.setHeaderText("Error starting.");
+				alert.showAndWait();
+				System.exit(1);
 			}
 		};
 	}

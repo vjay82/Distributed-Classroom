@@ -37,7 +37,7 @@ public class StartWindowController {
 	protected ScreenChoiceBox screenChoiceBox;
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings, RunAfterStartWindowClosed runAfterStartWindowClosed) {
-		stage.setTitle(resources.getString("title") + " " + DistributedClassroom.VERSION);
+		stage.setTitle(String.format(resources.getString("title"), DistributedClassroom.VERSION));
 
 		buttonStart.setDisable(true);
 		tfName.textProperty().addListener((obs, old, text) -> {

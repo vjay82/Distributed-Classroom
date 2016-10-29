@@ -22,6 +22,7 @@ import com.google.common.collect.Maps;
 
 import de.volkerGronau.ApplicationHelper;
 import de.volkerGronau.distributedClassroom.ClientBackend.UserStatus;
+import de.volkerGronau.distributedClassroom.DistributedClassroom;
 import de.volkerGronau.distributedClassroom.NetworkInputStream;
 import de.volkerGronau.distributedClassroom.NetworkOutputStream;
 import de.volkerGronau.distributedClassroom.settings.Settings;
@@ -273,7 +274,7 @@ public class ServerWindowController {
 	protected volatile boolean frozen;
 
 	protected void updateTitle() {
-		stage.setTitle(resources.getString("title") + (openedClient == null ? "" : " - " + openedClient.userName + " - " + resources.getString("status") + " " + openedClient.userStatus));
+		stage.setTitle(String.format(resources.getString("title"), DistributedClassroom.VERSION) + (openedClient == null ? "" : " - " + openedClient.userName + " - " + resources.getString("status") + " " + openedClient.userStatus));
 	}
 
 	public void init(Stage stage, ResourceBundle resources, Settings settings) throws Exception {
@@ -307,7 +308,7 @@ public class ServerWindowController {
 
 				@Override
 				public void run() {
-					System.out.println("Stopping HttpServer");
+					System.out.println("Stopping Server");
 					closing = true;
 					try {
 						welcomeSocket.close();
