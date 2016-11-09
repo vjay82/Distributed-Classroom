@@ -89,7 +89,7 @@ public class ClientBackend {
 				}
 			}
 		};
-		interactionThread.setDaemon(false);
+		interactionThread.setDaemon(true);
 		interactionThread.start();
 	}
 
@@ -169,8 +169,8 @@ public class ClientBackend {
 				clientSocket.close();
 			} catch (IOException e) {
 			}
+			clientSocket = null;
 		}
-		clientSocket = null;
 	}
 
 	protected void contactServer() {
@@ -269,7 +269,7 @@ public class ClientBackend {
 				}
 			}
 		};
-		readThread.setDaemon(false);
+		readThread.setDaemon(true);
 		readThread.start();
 	}
 

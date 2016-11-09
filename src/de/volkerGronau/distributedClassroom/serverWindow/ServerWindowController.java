@@ -79,11 +79,11 @@ public class ServerWindowController {
 				imageView.setImage(fxImage);
 			}
 		}
-		public void readBufferedImagePicture(NetworkInputStream ois) throws Exception {
-			boolean imageIsUpdate = ois.readBoolean();
+		public void readBufferedImagePicture(NetworkInputStream networkInputStream) throws Exception {
+			boolean imageIsUpdate = networkInputStream.readBoolean();
 
-			byte[] imageBytes = new byte[ois.readInt()];
-			if (ois.read(imageBytes) < imageBytes.length) {
+			byte[] imageBytes = new byte[networkInputStream.readInt()];
+			if (networkInputStream.read(imageBytes) < imageBytes.length) {
 				throw new Exception("Could not read image");
 			}
 
@@ -300,7 +300,7 @@ public class ServerWindowController {
 				}
 			}
 		};
-		welcomeThread.setDaemon(false);
+		welcomeThread.setDaemon(true);
 		welcomeThread.start();
 
 		stage.setOnCloseRequest(e -> {
@@ -319,7 +319,7 @@ public class ServerWindowController {
 					System.exit(0);
 				}
 			};
-			closeThread.setDaemon(true);
+			closeThread.setDaemon(false);
 			closeThread.start();
 		});
 
@@ -371,7 +371,7 @@ public class ServerWindowController {
 				}
 			}
 		};
-		removeOldClientsThread.setDaemon(false);
+		removeOldClientsThread.setDaemon(true);
 		removeOldClientsThread.start();
 	}
 
@@ -384,7 +384,7 @@ public class ServerWindowController {
 	}
 
 	protected void addClient(Socket clientSocket) {
-		System.out.println("Adding client");
+		System.out.println("Adding Client, starting thread");
 		Thread clientThread = new Thread() {
 			@Override
 			public void run() {
@@ -410,8 +410,7 @@ public class ServerWindowController {
 					client.setIsInputControlledByServer(client == openedClient && isControlling);
 
 					while (!isInterrupted()) {
-						System.out.println("UserName: " + userName + " waiting for command, available is: " + ois.available());
-
+						//System.out.println("UserName: " + userName + " waiting for command, available is: " + ois.available());
 						char command = ois.readChar();
 						System.out.println("UserName: " + userName + " got command: " + command);
 						switch (command) {
@@ -447,7 +446,7 @@ public class ServerWindowController {
 
 			}
 		};
-		clientThread.setDaemon(false);
+		clientThread.setDaemon(true);
 		clientThread.start();
 	}
 
@@ -456,15 +455,17 @@ public class ServerWindowController {
 			if (client == openedClient) {
 				updateTitle();
 			}
-			switch (client.userStatus) {
-				case OK :
-					client.borderPane.setStyle("-fx-background-color:green");
-					break;
-				case NOT_OK :
-					client.borderPane.setStyle("-fx-background-color:red");
-					break;
-				default :
-					client.borderPane.setStyle("");
+			if (client.borderPane != null) {
+				switch (client.userStatus) {
+					case OK :
+						client.borderPane.setStyle("-fx-background-color:green");
+						break;
+					case NOT_OK :
+						client.borderPane.setStyle("-fx-background-color:red");
+						break;
+					default :
+						client.borderPane.setStyle("");
+				}
 			}
 		});
 	}
