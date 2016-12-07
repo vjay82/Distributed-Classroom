@@ -206,7 +206,7 @@ public class ClientBackend {
 			networkOutputStream.writeInt(bos.size());
 			networkOutputStream.write(bos.toByteArray());
 			long timeTaken = System.currentTimeMillis() - startTime;
-			System.out.println("Sending image took: " + timeTaken);
+			System.out.println("Sending image took: " + timeTaken + " and image was " + bos.size() + " bytes.");
 			if (timeTaken > 2000) {
 				useGIF = true;
 			}
@@ -321,7 +321,7 @@ public class ClientBackend {
 				pixelsDifference[index] = 0;
 			} else {
 				// not equal, we set the difference to the difference
-				pixelsDifference[index] = pixelsNew[index] + 0xFF000000;
+				pixelsDifference[index] = pixelsNew[index] | 0xFF000000;
 				result++;
 			}
 		}
